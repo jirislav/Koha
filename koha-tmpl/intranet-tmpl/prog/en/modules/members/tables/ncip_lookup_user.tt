@@ -1,95 +1,38 @@
 [% USE AuthorisedValues %]
-{
-    "sEcho": [% sEcho %],
-    "iTotalRecords": [% iTotalRecords %],
-    "iTotalDisplayRecords": [% iTotalDisplayRecords %],
-    "aaData": [
-        [% FOREACH data IN aaData %]
-            {
-                "patron_barcode":
-                    "[% data.cardnumber %]",
-
-		"patron_bor_number":
-                    "[% data.borrowernumber %]"
-
-                "patron_firstname":
-                    "[% data.firstname %]",
-
-		"patron_surname":
-		    "[% data.surname %]",
-
-		"patron_othernames":
-		    "[% data.othernames %]",
-
-		"patron_street_number":
-		    "[% data.streetnumber %]", 
-
-		"patron_street_type":
-			"[% AuthorisedValues.GetByCode( 'ROADTYPE', data.streettype ) %]",
-
-		"patron_address":
-		    "[% data.address %]",
-
-		"patron_address2":
-		    "[% data.address2 %]", 
-
-		"patron_city":
-		    "[% data.city %]", 
-
-		"patron_state":
-		    "[% data.state %]", 
-
-		"patron_zipcode":
-		    "[% data.zipcode %]", 
-
-		"patron_country":
-		    "[% data.country %]", 
-
-		"patron_email":
-		    "[% data.email %]",
-
-		"patron_mobile":
-		    "[% data.mobile %]",
-
-		"patron_phone":
-		    "[% data.phone %]",
-
-		"patron_phone2":
-		    "[% data.phonepro %]",
-
-		"patron_alt_contact_phone":
-		    "[% data.altcontactphone %]",
-
-		"patron_alt_contact_phone2":
-		    "[% data.B_phone %]",
-
-		"patron_birth_date":
-
-                "patron_category_description":
-                    "[% data.category_description %]",
-
-		"patron_category_type":
-		    "[% data.category_type %]",
-
-                "patron_branch":
-                    "[% data.branchname %]",
-
-                "patron_expiration":
-                    "[% data.dateexpiry %]",
-
-                "patron_overdues":
-                    "[% data.overdues %]",
-
-		"patron_issues":
-		    "[% data.issues %]",
-
-                "patron_fines":
-		    "[% data.fines %]",
-
-                "patron_borrowernotes":
-                    "[% data.borrowernotes.replace('\\\\' , '\\\\') |html_line_break |collapse %]",
-
-            }[% UNLESS loop.last %],[% END %]
-        [% END %]
-    ]
+{ "count": [% iTotalDisplayRecords %],
+        "patron_info": [[% FOREACH data IN aaData %]{
+                "patron_barcode": "[% data.cardnumber %]",
+                "patron_bor_number": "[% data.borrowernumber %]",
+                "patron_login": "[% data.userid %]",
+                "patron_title": "[% data.title %]",
+                "patron_firstname": "[% data.firstname %]",
+                "patron_surname": "[% data.surname %]",
+                "patron_othernames": "[% data.othernames %]",
+                "patron_street_number": "[% data.streetnumber %]",
+                "patron_street_type": "[% AuthorisedValues.GetByCode( 'ROADTYPE', data.streettype ) %]",
+                "patron_address": "[% data.address %]",
+                "patron_address2": "[% data.address2 %]",
+                "patron_city": "[% data.city %]",
+                "patron_state": "[% data.state %]",
+                "patron_zipcode": "[% data.zipcode %]",
+                "patron_country": "[% data.country %]",
+                "patron_email": "[% data.email %]",
+                "patron_mobile": "[% data.mobile %]",
+                "patron_phone": "[% data.phone %]",
+                "patron_phone2": "[% data.phonepro %]",
+                "patron_alt_contact_phone": "[% data.altcontactphone %]",
+                "patron_alt_contact_phone2": "[% data.B_phone %]",
+                "patron_birth_date": "[% data.dateofbirth %]",
+                "patron_category_description": "[% data.category_description %]",
+                "patron_category_type": "[% data.category_type %]",
+                "patron_branch_code": "[% data.branchcode %]",
+                "patron_branch": "[% data.branchname %]",
+                "patron_expiration": "[% data.dateexpiry %]",
+                "patron_overdues": "[% data.overdues %]",
+                "patron_issues": "[% data.issues %]",
+                "patron_fines": "[% data.fines %]",
+                "patron_flags": "[% data.flags %]",
+                "patron_borrowernotes": "[% data.borrowernotes.replace('\\\\' , '\\\\') |html_line_break |collapse %]"
+            }[% IF loop.last %]][% ELSE %],[% END %][% END %]
 }
+
