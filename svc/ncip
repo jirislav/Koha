@@ -1,0 +1,131 @@
+#!/usr/bin/perl
+
+# Copyright 2007 LibLime
+# Copyright 2012 software.coop and MJ Ray
+#
+# This file is part of Koha.
+#
+# Koha is free software; you can redistribute it and/or modify it under the
+# terms of the GNU General Public License as published by the Free Software
+# Foundation; either version 2 of the License, or (at your option) any later
+# version.
+#
+# Koha is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+# A PARTICULAR PURPOSE.  See the GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License along
+# with Koha; if not, write to the Free Software Foundation, Inc.,
+# 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+#
+
+use strict;
+use warnings;
+
+use CGI qw ( -utf8 );
+use C4::Auth qw/check_api_auth/;
+use C4::Biblio;
+use C4::Items;
+use XML::Simple;
+use C4::NCIP::LookupUser qw/lookupUser/;
+
+use C4::Auth qw( get_template_and_user );
+use C4::Output qw( output_with_http_headers );
+
+my $query = new CGI;
+binmode STDOUT, ':encoding(UTF-8)';
+
+my ($status, $cookie, $sessionID) = check_api_auth($query, { editcatalogue => 'edit_catalogue'} );
+unless ($status eq "ok") {
+    print $query->header(-type => 'text/xml', -status => '403 Forbidden');
+    print XMLout({ auth_status => $status }, NoAttr => 1, RootName => 'response', XMLDecl => 1);
+    exit 0;
+}
+
+# do initial validation
+
+if ($query->request_method eq "GET") {
+	my $service = $query->param('service'); 
+	if(not defined $service) {
+		print $query->header(-type => 'text/plain', -status => '400 Bad Request');
+		print "Param service is undefined..";
+		exit 0;
+	}
+
+	if ($service eq 'lookup_item') {
+		my $itemid = $query->param('itemid');
+		if (not defined $itemid or not is_integer($itemid)) {
+		        print $query->header(-type => 'text/plain', -status => '400 Bad Request');
+			print "Param itemid is undefined or is not a number..";
+		        exit 0;
+		}
+
+		fetch_bib($query, $itemid);
+	} elsif ($service eq 'lookup_user') {
+		my $userid = $query->param('userId');
+		if ($userid eq '') {
+		        print $query->header(-type => 'text/plain', -status => '400 Bad Request');
+			print "Param userid is undefined..";
+		        exit 0;
+		}
+
+		my ($template, $user, $cookie) = get_template_and_user({
+		    template_name   => "ncip/lookup_user_json.tt",
+		    query           => $query,
+		    type            => "intranet",
+		    authnotrequired => 0,
+		    flagsrequired   => { borrowers => 1 }
+		});
+
+		my $results;
+		$results = C4::NCIP::LookupUser::lookupUser(
+		    {
+			input => $query,
+			userid => $userid
+		    }
+		) unless $results;		
+
+		$template->param(
+		    sEcho => '',
+		    iTotalRecords => $results->{iTotalRecords},
+		    iTotalDisplayRecords => $results->{iTotalDisplayRecords},
+		    aaData => $results->{patrons}
+		);
+
+		output_with_http_headers $query, $cookie, $template->output, 'json';
+	} elsif ($service eq 'lookup_request') {
+
+	} elsif ($service eq 'request_item') {
+
+	} elsif ($service eq 'renew_item') {
+
+	} elsif ($service eq 'cancel_request_item') {
+
+	} else {
+		print $query->header(-type => 'text/plain', -status => '400 Bad Request');
+		print "Param service not recognized..";
+		exit 0;
+	}
+} else {
+    print $query->header(-type => 'text/plain', -status => '405 Method not allowed');
+    print XMLout({ error => 'Method not allowed' }, NoAttr => 1, RootName => 'response', XMLDecl => 1);
+    exit 0;
+}
+
+exit 0;
+
+sub fetch_bib {
+    my $query = shift;
+    my $biblionumber = shift;
+    my $record = GetMarcBiblio( $biblionumber, "Y" );
+    if  (defined $record) {
+        print $query->header(-type => 'text/xml',-charset => 'utf-8',);
+        print $record->as_xml_record();
+    } else {
+        print $query->header(-type => 'text/xml', -status => '404 Not Found');
+    }
+}
+
+sub is_integer {
+   defined $_[0] && $_[0] =~ /^[+-]?\d+$/;
+}

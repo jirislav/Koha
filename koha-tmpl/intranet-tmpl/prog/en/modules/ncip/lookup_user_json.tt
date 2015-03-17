@@ -33,6 +33,6 @@
                 "patron_fines": "[% data.fines %]",
                 "patron_flags": "[% data.flags %]",
                 "patron_borrowernotes": "[% data.borrowernotes.replace('\\\\' , '\\\\') |html_line_break |collapse %]"
-            }[% IF loop.last %]][% ELSE %],[% END %][% END %]
+            }[% IF NOT loop.last %],[% END %][% END %]]
 }
 
