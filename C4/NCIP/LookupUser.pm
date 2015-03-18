@@ -30,6 +30,7 @@ use C4::Biblio qw(GetMarcBiblio GetFrameworkCode GetRecordValue );
 use C4::Circulation qw(GetIssuingCharges CanBookBeRenewed GetRenewCount GetSoonestRenewDate);
 use C4::Koha qw(GetAuthorisedValueByCode);
 use C4::Context;
+use C4::Circulation qw(GetTransfers);
 
 sub lookupUser {
 	my ( $params ) = @_;
@@ -44,7 +45,7 @@ sub lookupUser {
 
 	my $results;
 
-	# Perform the patrons search
+	# Perform the patrons search;
 	$results = C4::Utils::DataTables::Members::search(
 	    {
 		searchmember => $searchmember,
@@ -116,10 +117,9 @@ sub parseLoanedItems {
 		LEFT JOIN branches ON ( issues.branchcode = branches.branchcode )
 		LEFT JOIN itemtypes itemtype_bib ON ( biblioitems.itemtype = itemtype_bib.itemtype )
 		LEFT JOIN itemtypes itemtype_item ON ( items.itype = itemtype_item.itemtype )
-	    WHERE borrowernumber
+	    WHERE borrowernumber = ?
 	';
 
-	$sql .= '= ?';
 	push( @parameters, @borrowernumber );
 
 	$sql .= " ORDER BY issuedate desc ";
@@ -228,4 +228,114 @@ sub parseLoanedItems {
 
 }
 
+sub parseRequestedItems {
+        my ( $params ) = @_;
+        my $input = $params->{input};
+
+	my $branch	     = $params->{branch};
+        my $borrowernumber   = $params->{userid};
+        my $offset           = $params->{offset};
+        my $results_per_page = $params->{size} || -1;
+
+        $results_per_page = undef if ( $results_per_page == -1 );
+	
+	my $schema = Koha::Database->new()->schema();
+
+	my $holds_rs = $schema->resultset('Reserve')->search(
+	    { borrowernumber => $borrowernumber },
+	    {
+	        prefetch => { 'item' => 'biblio' },
+	        order_by => { '-desc' => 'reservedate' }
+	    }
+	);
+	
+
+	my $borrower;
+	my @holds;
+	while ( my $h = $holds_rs->next() ) {
+	    my $item = $h->item();
+
+	    my $biblionumber = $h->biblio()->biblionumber();
+
+	    my $hold = {
+		DT_RowId       => $h->reserve_id(),
+		biblionumber   => $biblionumber,
+		title          => $h->biblio()->title(),
+		author         => $h->biblio()->author(),
+		reserve_id     => $h->reserve_id(),
+		reservedate    => $h->reservedate(),
+		expirationdate => $h->expirationdate(),
+		suspend        => $h->suspend(),
+		suspend_until  => $h->suspend_until(),
+		found          => $h->found(),
+		waiting        => $h->found() eq 'W',
+		waiting_at     => $h->branchcode()->branchname(),
+		waiting_here   => $h->branchcode()->branchcode() eq $branch,
+		priority       => $h->priority(),
+		subtitle       => GetRecordValue(
+		    'subtitle', GetMarcBiblio($biblionumber),
+		    GetFrameworkCode($biblionumber)
+		),
+		reservedate_formatted => $h->reservedate() ? output_pref(
+		    { dt => dt_from_string( $h->reservedate() ), dateonly => 1 }
+		  )
+		: q{},
+		suspend_until_formatted => $h->suspend_until() ? output_pref(
+		    { dt => dt_from_string( $h->suspend_until() ), dateonly => 1 }
+		  )
+		: q{},
+		expirationdate_formatted => $h->expirationdate() ? output_pref(
+		    { dt => dt_from_string( $h->expirationdate() ), dateonly => 1 }
+		  )
+		: q{},
+	    };
+
+	    $hold->{transfered}     = 0;
+	    $hold->{not_transfered} = 0;
+
+	    if ($item) {
+		$hold->{itemnumber}     = $item->itemnumber();
+		$hold->{barcode}        = $item->barcode();
+		$hold->{itemtype}       = $item->effective_itemtype();
+		$hold->{itemcallnumber} = $item->itemcallnumber() || q{};
+
+		my ( $transferred_when, $transferred_from, $transferred_to ) =
+		  GetTransfers( $item->itemnumber() );
+		if ($transferred_when) {
+		    $hold->{color}       = 'transferred';
+		    $hold->{transferred} = 1;
+		    $hold->{date_sent} = output_pref( dt_from_string($transferred_when) );
+		    $hold->{from_branch} = GetBranchName($transferred_from);
+		}
+		elsif ( $item->holdingbranch()->branchcode() ne
+		    $h->branchcode()->branchcode() )
+		{
+		    $hold->{not_transferred}    = 1;
+		    $hold->{not_transferred_by} = $h->item()->holdingbranch()->branchname();
+		}
+	    }
+
+	    push( @holds, $hold );
+	}
+	my $data;
+	$data->{'iTotalRecords'}        = scalar @holds;
+	$data->{'iTotalDisplayRecords'} = scalar @holds;
+	$data->{'sEcho'}                = $input->param('sEcho') || undef;
+	$data->{'aaData'}               = \@holds;
+	return $data;
+}
+
+sub parseUserFiscalAccount {
+        my ( $params ) = @_;
+        my $input = $params->{input};
+	# TODO: No svc doing this has been implemented, thus it is needed to create custom SQL query ..
+
+        my @borrowernumber   = $params->{'userid'};
+        my $offset           = $params->{'offset'};
+        my $results_per_page = $params->{'size'} || -1;
+
+        $results_per_page = undef if ( $results_per_page == -1 );
+}
+
 1;
+

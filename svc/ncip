@@ -26,6 +26,7 @@ use CGI qw ( -utf8 );
 use C4::Auth qw/check_api_auth/;
 use C4::Biblio;
 use C4::Items;
+use C4::Context;
 use XML::Simple;
 use JSON qw(to_json);
 use C4::NCIP::LookupUser qw/lookupUser parseLoanedItems/;
@@ -71,45 +72,47 @@ if ($query->request_method eq "GET") {
 		        exit 0;
 		}
 
+		my $results;
+
 		if (defined $query->param('loanedItemsDesired')) {
-			my $results;
 			$results = C4::NCIP::LookupUser::parseLoanedItems(
 				{
 					input => $query,
-					userid => $userid
+					userid => $userid,
+					offset => 0,
+					size => -1
 				}
-			) unless $results;
-			print $query->header(-type => 'text/plain',-charset => 'utf-8',);
-			print to_json($results);
+			);
+		} elsif (defined $query->param('requestedItemsDesired')) {
+			$results = C4::NCIP::LookupUser::parseRequestedItems(
+				{
+					input => $query,
+					userid => $userid,			
+					offset => 0,
+					size => -1,
+					branch => C4::Context->userenv->{'branch'}
+				}
+			);
+		} elsif (defined $query->param('userFiscalAccountDesired')) {
+			$results = C4::NCIP::LookupUser::parseUserFiscalAccount(
+				{
+					input => $query,
+					userid => $userd
+				}
+			);
 		} else {
-
-			my ($template, $user, $cookie) = get_template_and_user({
-			    template_name   => "ncip/lookup_user_json.tt",
-			    query           => $query,
-			    type            => "intranet",
-			    authnotrequired => 0,
-			    flagsrequired   => { borrowers => 1 }
-			});
-
-			my $results;
 			$results = C4::NCIP::LookupUser::lookupUser(
 			    {
 				input => $query,
 				userid => $userid
 			    }
-			) unless $results;		
-
-			$template->param(
-			    sEcho => '',
-			    iTotalRecords => $results->{iTotalRecords},
-			    iTotalDisplayRecords => $results->{iTotalDisplayRecords},
-			    aaData => $results->{patrons}
-			);
-
-			output_with_http_headers $query, $cookie, $template->output, 'json';
-			exit 0;
+			);		
 		}
+                print $query->header(-type => 'text/plain',-charset => 'utf-8',);
+		print to_json($results);
+
 	} elsif ($service eq 'lookup_request') {
+		# two possibilities: Have either UserId & ItemId or RequestId ..
 
 	} elsif ($service eq 'request_item') {
 
@@ -135,7 +138,7 @@ sub fetch_bib {
     my $biblionumber = shift;
     my $record = GetMarcBiblio( $biblionumber, "Y" );
     if  (defined $record) {
-        print $query->header(-type => 'text/xml',-charset => 'utf-8',);
+        print $query->header(-type => 'text/xml',-charset => 'utf-8',);# Reason why we use xml & marc here is because of all Koha items are being held in DB in marc format, thus it's much quicker to parse it this way
         print $record->as_xml_record();
     } else {
         print $query->header(-type => 'text/xml', -status => '404 Not Found');
