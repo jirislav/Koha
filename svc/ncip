@@ -27,7 +27,8 @@ use C4::Auth qw/check_api_auth/;
 use C4::Biblio;
 use C4::Items;
 use XML::Simple;
-use C4::NCIP::LookupUser qw/lookupUser/;
+use JSON qw(to_json);
+use C4::NCIP::LookupUser qw/lookupUser parseLoanedItems/;
 
 use C4::Auth qw( get_template_and_user );
 use C4::Output qw( output_with_http_headers );
@@ -61,7 +62,8 @@ if ($query->request_method eq "GET") {
 		}
 
 		fetch_bib($query, $itemid);
-	} elsif ($service eq 'lookup_user') {
+		exit 0;
+	} elsif ($service eq 'lookup_user') { # TODO: If Loaned items desired, use this somehow: http://188.166.14.82:8080/cgi-bin/koha/svc/checkouts?borrowernumber=3
 		my $userid = $query->param('userId');
 		if ($userid eq '') {
 		        print $query->header(-type => 'text/plain', -status => '400 Bad Request');
@@ -69,30 +71,44 @@ if ($query->request_method eq "GET") {
 		        exit 0;
 		}
 
-		my ($template, $user, $cookie) = get_template_and_user({
-		    template_name   => "ncip/lookup_user_json.tt",
-		    query           => $query,
-		    type            => "intranet",
-		    authnotrequired => 0,
-		    flagsrequired   => { borrowers => 1 }
-		});
+		if (defined $query->param('loanedItemsDesired')) {
+			my $results;
+			$results = C4::NCIP::LookupUser::parseLoanedItems(
+				{
+					input => $query,
+					userid => $userid
+				}
+			) unless $results;
+			print $query->header(-type => 'text/plain',-charset => 'utf-8',);
+			print to_json($results);
+		} else {
 
-		my $results;
-		$results = C4::NCIP::LookupUser::lookupUser(
-		    {
-			input => $query,
-			userid => $userid
-		    }
-		) unless $results;		
+			my ($template, $user, $cookie) = get_template_and_user({
+			    template_name   => "ncip/lookup_user_json.tt",
+			    query           => $query,
+			    type            => "intranet",
+			    authnotrequired => 0,
+			    flagsrequired   => { borrowers => 1 }
+			});
 
-		$template->param(
-		    sEcho => '',
-		    iTotalRecords => $results->{iTotalRecords},
-		    iTotalDisplayRecords => $results->{iTotalDisplayRecords},
-		    aaData => $results->{patrons}
-		);
+			my $results;
+			$results = C4::NCIP::LookupUser::lookupUser(
+			    {
+				input => $query,
+				userid => $userid
+			    }
+			) unless $results;		
 
-		output_with_http_headers $query, $cookie, $template->output, 'json';
+			$template->param(
+			    sEcho => '',
+			    iTotalRecords => $results->{iTotalRecords},
+			    iTotalDisplayRecords => $results->{iTotalDisplayRecords},
+			    aaData => $results->{patrons}
+			);
+
+			output_with_http_headers $query, $cookie, $template->output, 'json';
+			exit 0;
+		}
 	} elsif ($service eq 'lookup_request') {
 
 	} elsif ($service eq 'request_item') {
