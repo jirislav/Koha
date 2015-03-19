@@ -33,6 +33,8 @@ use C4::NCIP::LookupUser qw/lookupUser parseLoanedItems/;
 
 use C4::Auth qw( get_template_and_user );
 use C4::Output qw( output_with_http_headers );
+use C4::Reserves qw(GetReservesFromBiblionumber);
+use C4::Items;
 
 my $query = new CGI;
 binmode STDOUT, ':encoding(UTF-8)';
@@ -62,7 +64,21 @@ if ($query->request_method eq "GET") {
 		        exit 0;
 		}
 
-		fetch_bib($query, $itemid);
+		if (defined $query->param('getHoldQueueLength') or defined $query->param('getCirculationStatus')) {
+			my $result;
+			if (defined $query->param('getHoldQueueLength')) {
+				my $holds = C4::Reserves::GetReservesFromBiblionumber({ biblionumber => $itemid, all_dates => 1 });
+				$result->{'holdQueueLength'} = scalar ( @$holds );
+			}
+			if (defined $query->param('getCirculationStatus')) {	
+				my @itemsinfo = C4::Items::GetItemsInfo($itemid);
+				$result->{'items'} = \@itemsinfo;
+			}
+	                print $query->header(-type => 'text/plain',-charset => 'utf-8',);
+			print to_json($result);
+		} else {
+			fetch_bib($query, $itemid);
+		}
 		exit 0;
 	} elsif ($service eq 'lookup_user') { # TODO: If Loaned items desired, use this somehow: http://188.166.14.82:8080/cgi-bin/koha/svc/checkouts?borrowernumber=3
 		my $userid = $query->param('userId');
@@ -75,7 +91,7 @@ if ($query->request_method eq "GET") {
 		my $results;
 
 		if (defined $query->param('loanedItemsDesired')) {
-			$results = C4::NCIP::LookupUser::parseLoanedItems(
+			$results->{'loanedItems'} = C4::NCIP::LookupUser::parseLoanedItems(
 				{
 					input => $query,
 					userid => $userid,
@@ -83,8 +99,9 @@ if ($query->request_method eq "GET") {
 					size => -1
 				}
 			);
-		} elsif (defined $query->param('requestedItemsDesired')) {
-			$results = C4::NCIP::LookupUser::parseRequestedItems(
+		} 
+		if (defined $query->param('requestedItemsDesired')) {
+			$results->{'requestedItems'} = C4::NCIP::LookupUser::parseRequestedItems(
 				{
 					input => $query,
 					userid => $userid,			
@@ -93,33 +110,38 @@ if ($query->request_method eq "GET") {
 					branch => C4::Context->userenv->{'branch'}
 				}
 			);
-		} elsif (defined $query->param('userFiscalAccountDesired')) {
-			$results = C4::NCIP::LookupUser::parseUserFiscalAccount(
+		} 
+		if (defined $query->param('userFiscalAccountDesired')) {
+			$results->{'userFiscalAccount'} = C4::NCIP::LookupUser::parseUserFiscalAccount(
 				{
 					input => $query,
-					userid => $userd
+					userid => $userid
 				}
 			);
-		} else {
-			$results = C4::NCIP::LookupUser::lookupUser(
-			    {
-				input => $query,
-				userid => $userid
-			    }
-			);		
 		}
+
+		$results->{'userInfo'} = C4::NCIP::LookupUser::lookupUser(
+		    {
+			input => $query,
+			userid => $userid
+		    }
+		);		
+
                 print $query->header(-type => 'text/plain',-charset => 'utf-8',);
 		print to_json($results);
-
+		exit 0;
 	} elsif ($service eq 'lookup_request') {
 		# two possibilities: Have either UserId & ItemId or RequestId ..
-
+		exit 0;
 	} elsif ($service eq 'request_item') {
 
+		exit 0;
 	} elsif ($service eq 'renew_item') {
 
+		exit 0;
 	} elsif ($service eq 'cancel_request_item') {
 
+		exit 0;
 	} else {
 		print $query->header(-type => 'text/plain', -status => '400 Bad Request');
 		print "Param service not recognized..";

@@ -30,6 +30,7 @@ use C4::Biblio qw(GetMarcBiblio GetFrameworkCode GetRecordValue );
 use C4::Circulation qw(GetIssuingCharges CanBookBeRenewed GetRenewCount GetSoonestRenewDate);
 use C4::Koha qw(GetAuthorisedValueByCode);
 use C4::Context;
+use C4::Members qw(GetMemberAccountRecords);
 use C4::Circulation qw(GetTransfers);
 
 sub lookupUser {
@@ -328,13 +329,16 @@ sub parseRequestedItems {
 sub parseUserFiscalAccount {
         my ( $params ) = @_;
         my $input = $params->{input};
-	# TODO: No svc doing this has been implemented, thus it is needed to create custom SQL query ..
 
-        my @borrowernumber   = $params->{'userid'};
+        my $borrowernumber   = $params->{'userid'};
         my $offset           = $params->{'offset'};
         my $results_per_page = $params->{'size'} || -1;
 
         $results_per_page = undef if ( $results_per_page == -1 );
+
+	my (undef, $accts, undef) = C4::Members::GetMemberAccountRecords($borrowernumber);
+
+	return $accts;
 }
 
 1;
