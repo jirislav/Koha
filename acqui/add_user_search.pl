@@ -33,7 +33,7 @@ my ( $template, $loggedinuser, $cookie, $staff_flags ) = get_template_and_user(
         query           => $input,
         type            => "intranet",
         authnotrequired => 0,
-        flagsrequired   => { borrowers => 1 },
+        flagsrequired   => { acquisition => 'order_manage' },
     }
 );
 
@@ -42,10 +42,18 @@ my $op = $input->param('op') || '';
 
 my $referer = $input->referer();
 
+# If this script is called by acqui/basket.pl
+# the patrons to return should be superlibrarian or have the order_manage
+# acquisition flag.
+my $search_patrons_with_acq_perm_only =
+    ( $referer =~ m|acqui/basket.pl| )
+        ? 1 : 0;
+
 $template->param(
+    patrons_with_acq_perm_only => $search_patrons_with_acq_perm_only,
     view => ( $input->request_method() eq "GET" ) ? "show_form" : "show_results",
-    columns => ['cardnumber', 'name', 'dateofbirth', 'address', 'action' ],
-    json_template => 'members/tables/guarantor_search.tt',
-    selection_type => 'select',
+    columns => ['cardnumber', 'name', 'branch', 'category', 'action'],
+    json_template => 'acqui/tables/members_results.tt',
+    selection_type => 'add',
 );
 output_html_with_http_headers( $input, $cookie, $template->output );

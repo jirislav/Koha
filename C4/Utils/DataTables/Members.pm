@@ -13,8 +13,12 @@ sub search {
     my $categorycode = $params->{categorycode};
     my $branchcode = $params->{branchcode};
     my $searchtype = $params->{searchtype};
-    my $searchfieldstype = $params->{searchfieldstype};
+    my $searchfieldstype = $params->{searchfieldstype} || 'standard';
     my $dt_params = $params->{dt_params};
+
+    unless ( $searchmember ) {
+        $searchmember = $dt_params->{sSearch};
+    }
 
     my ($iTotalRecords, $iTotalDisplayRecords);
 
@@ -35,6 +39,7 @@ sub search {
         borrowers.borrowernotes, borrowers.branchcode, borrowers.email,
         borrowers.emailpro, borrowers.phone, borrowers.phonepro, borrowers.mobile,
         borrowers.altcontactphone, borrowers.B_phone, borrowers.B_email,
+        borrowers.userid, borrowers.dateofbirth,
         categories.description AS category_description, categories.category_type,
         branches.branchname";
     my $from = "FROM borrowers

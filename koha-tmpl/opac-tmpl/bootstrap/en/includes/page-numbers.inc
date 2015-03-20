@@ -1,5 +1,5 @@
 [% IF ( PAGE_NUMBERS ) %]
-    <div class="pagination pagination-small">
+    <div class="pagination pagination-small noprint">
         <ul>
         [% IF ( previous_page_offset.defined ) %]
             <li><a href="/cgi-bin/koha/opac-search.pl?[% query_cgi |html %][% limit_cgi |html %]&amp;offset=[% previous_page_offset %][% IF ( sort_by ) %]&amp;sort_by=[% sort_by |html %][% END %]">&laquo; Previous</a></li>

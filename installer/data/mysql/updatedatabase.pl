@@ -9793,7 +9793,6 @@ if(CheckVersion($DBversion)) {
     SetVersion($DBversion);
 }
 
-
 $DBversion = "3.19.00.013";
 if ( CheckVersion($DBversion) ) {
     $dbh->do(q|
@@ -9801,6 +9800,70 @@ if ( CheckVersion($DBversion) ) {
           (13, 'records_batchmod', 'Perform batch modification of records (biblios or authorities)')
     |);
     print "Upgrade to $DBversion done (Bug 11395: Add permission tools_records_batchmod)\n";
+    SetVersion($DBversion);
+}
+
+$DBversion = "3.19.00.014";
+if ( CheckVersion($DBversion) ) {
+    $dbh->do(q|
+        CREATE TABLE aqorder_users (
+            ordernumber int(11) NOT NULL,
+            borrowernumber int(11) NOT NULL,
+            PRIMARY KEY (ordernumber, borrowernumber),
+            CONSTRAINT aqorder_users_ibfk_1 FOREIGN KEY (ordernumber) REFERENCES aqorders (ordernumber) ON DELETE CASCADE ON UPDATE CASCADE,
+            CONSTRAINT aqorder_users_ibfk_2 FOREIGN KEY (borrowernumber) REFERENCES borrowers (borrowernumber) ON DELETE CASCADE ON UPDATE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_unicode_ci;
+    |);
+
+    $dbh->do(q|
+        INSERT INTO letter(module, code, branchcode, name, title, content, message_transport_type)
+        VALUES ('acquisition', 'ACQ_NOTIF_ON_RECEIV', '', 'Notification on receiving', 'Order received', 'Dear <<borrowers.firstname>> <<borrowers.surname>>,\n\n The order <<aqorders.ordernumber>> (<<biblio.title>>) has been received.\n\nYour library.', 'email')
+    |);
+    print "Upgrade to $DBversion done (Bug 12648: Add letter ACQ_NOTIF_ON_RECEIV )\n";
+    SetVersion ($DBversion);
+}
+
+$DBversion = "3.19.00.015";
+if ( CheckVersion($DBversion) ) {
+    $dbh->do(q|
+        ALTER TABLE search_history ADD COLUMN id INT(11) NOT NULL AUTO_INCREMENT FIRST, ADD PRIMARY KEY(id);
+    |);
+    print "Upgrade to $DBversion done (Bug 11430 - Add primary key for search_history)\n";
+    SetVersion($DBversion);
+}
+
+$DBversion = "3.19.00.016";
+if(CheckVersion($DBversion)) {
+    $dbh->do(q{
+        INSERT INTO authorised_values (category, authorised_value, lib) VALUES
+         ('ORDER_CANCELLATION_REASON', 0, 'No reason provided'),
+         ('ORDER_CANCELLATION_REASON', 1, 'Out of stock'),
+         ('ORDER_CANCELLATION_REASON', 2, 'Restocking')
+    });
+
+    my $already_existing_reasons = $dbh->selectcol_arrayref(q{
+        SELECT DISTINCT( cancellationreason )
+        FROM aqorders;
+    }, { Slice => {} });
+
+    my $update_orders_sth = $dbh->prepare(q{
+        UPDATE aqorders
+        SET cancellationreason = ?
+        WHERE cancellationreason = ?
+    });
+
+    my $insert_av_sth = $dbh->prepare(q{
+        INSERT INTO authorised_values (category, authorised_value, lib) VALUES
+         ('ORDER_CANCELLATION_REASON', ?, ?)
+    });
+    my $i = 3;
+    for my $reason ( @$already_existing_reasons ) {
+        next unless $reason;
+        $insert_av_sth->execute( $i, $reason );
+        $update_orders_sth->execute( $i, $reason );
+        $i++;
+    }
+    print "Upgrade to $DBversion done (Bug 13380: Add the ORDER_CANCELLATION_REASON authorised value)\n";
     SetVersion($DBversion);
 }
 

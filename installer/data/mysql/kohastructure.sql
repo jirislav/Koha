@@ -322,15 +322,15 @@ CREATE TABLE `borrower_attributes` ( -- values of custom patron fields known as 
 --
 
 DROP TABLE IF EXISTS `borrower_debarments`;
-CREATE TABLE borrower_debarments (
-  borrower_debarment_id int(11) NOT NULL AUTO_INCREMENT,
-  borrowernumber int(11) NOT NULL,
-  expiration date DEFAULT NULL,
-  `type` enum('SUSPENSION','OVERDUES','MANUAL') NOT NULL DEFAULT 'MANUAL',
-  `comment` text,
-  manager_id int(11) DEFAULT NULL,
-  created timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  updated timestamp NULL DEFAULT NULL,
+CREATE TABLE borrower_debarments ( -- tracks restrictions on the patron's record
+  borrower_debarment_id int(11) NOT NULL AUTO_INCREMENT, -- unique key for the restriction
+  borrowernumber int(11) NOT NULL, -- foreign key for borrowers.borrowernumber for patron who is restricted
+  expiration date DEFAULT NULL, -- expiration date of the restriction
+  `type` enum('SUSPENSION','OVERDUES','MANUAL') NOT NULL DEFAULT 'MANUAL', -- type of restriction
+  `comment` text, -- comments about the restriction
+  manager_id int(11) DEFAULT NULL, -- foreign key for borrowers.borrowernumber for the librarian managing the restriction
+  created timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, -- date the restriction was added
+  updated timestamp NULL DEFAULT NULL, -- date the restriction was updated
   PRIMARY KEY (borrower_debarment_id),
   KEY borrowernumber (borrowernumber),
   CONSTRAINT `borrower_debarments_ibfk_1` FOREIGN KEY (`borrowernumber`) REFERENCES `borrowers` (`borrowernumber`)
@@ -477,7 +477,7 @@ CREATE TABLE `categories` ( -- this table shows information related to Koha patr
   `enrolmentperiod` smallint(6) default NULL, -- number of months the patron is enrolled for (will be NULL if enrolmentperioddate is set)
   `enrolmentperioddate` DATE NULL DEFAULT NULL, -- date the patron is enrolled until (will be NULL if enrolmentperiod is set)
   `upperagelimit` smallint(6) default NULL, -- age limit for the patron
-  `dateofbirthrequired` tinyint(1) default NULL,
+  `dateofbirthrequired` tinyint(1) default NULL, -- the minimum age required for the patron category
   `finetype` varchar(30) default NULL, -- unused in Koha
   `bulk` tinyint(1) default NULL,
   `enrolmentfee` decimal(28,6) default NULL, -- enrollment fee for the patron
@@ -530,16 +530,16 @@ CREATE TABLE collections_tracking (
 
 DROP TABLE IF EXISTS courses;
 CREATE TABLE `courses` (
-  `course_id` int(11) NOT NULL AUTO_INCREMENT,
-  `department` varchar(80) DEFAULT NULL, -- Stores the authorised value DEPT
-  `course_number` varchar(255) DEFAULT NULL, -- An arbitrary field meant to store the "course number" assigned to a course
-  `section` varchar(255) DEFAULT NULL, -- Also arbitrary, but for the 'section' of a course.
-  `course_name` varchar(255) DEFAULT NULL,
-  `term` varchar(80) DEFAULT NULL, -- Stores the authorised value TERM
-  `staff_note` mediumtext,
-  `public_note` mediumtext,
-  `students_count` varchar(20) DEFAULT NULL, -- Meant to be just an estimate of how many students will be taking this course/section
-  `enabled` enum('yes','no') NOT NULL DEFAULT 'yes', -- Determines whether the course is active
+  `course_id` int(11) NOT NULL AUTO_INCREMENT, -- unique id for the course
+  `department` varchar(80) DEFAULT NULL, -- the authorised value for the DEPARTMENT
+  `course_number` varchar(255) DEFAULT NULL, -- the "course number" assigned to a course
+  `section` varchar(255) DEFAULT NULL, -- the 'section' of a course
+  `course_name` varchar(255) DEFAULT NULL, -- the name of the course
+  `term` varchar(80) DEFAULT NULL, -- the authorised value for the TERM
+  `staff_note` mediumtext, -- the text of the staff only note
+  `public_note` mediumtext, -- the text of the public / opac note
+  `students_count` varchar(20) DEFAULT NULL, -- how many students will be taking this course/section
+  `enabled` enum('yes','no') NOT NULL DEFAULT 'yes', -- determines whether the course is active
   `timestamp` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
    PRIMARY KEY (`course_id`)
 ) ENGINE=InnoDB  DEFAULT CHARSET=utf8 COLLATE=utf8_unicode_ci;
@@ -554,8 +554,8 @@ CREATE TABLE `courses` (
 
 DROP TABLE IF EXISTS course_instructors;
 CREATE TABLE `course_instructors` (
-  `course_id` int(11) NOT NULL,
-  `borrowernumber` int(11) NOT NULL,
+  `course_id` int(11) NOT NULL, -- foreign key to link to courses.course_id
+  `borrowernumber` int(11) NOT NULL, -- foreign key to link to borrowers.borrowernumber for instructor information
   PRIMARY KEY (`course_id`,`borrowernumber`),
   KEY `borrowernumber` (`borrowernumber`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_unicode_ci;
@@ -577,13 +577,13 @@ ALTER TABLE `course_instructors`
 
 DROP TABLE IF EXISTS course_items;
 CREATE TABLE `course_items` (
-  `ci_id` int(11) NOT NULL AUTO_INCREMENT,
+  `ci_id` int(11) NOT NULL AUTO_INCREMENT, -- course item id
   `itemnumber` int(11) NOT NULL, -- items.itemnumber for the item on reserve
-  `itype` varchar(10) DEFAULT NULL, -- an optional new itemtype for the item to have while on reserve
-  `ccode` varchar(10) DEFAULT NULL, -- an optional new category code for the item to have while on reserve
-  `holdingbranch` varchar(10) DEFAULT NULL, -- an optional new holding branch for the item to have while on reserve
-  `location` varchar(80) DEFAULT NULL, -- an optional new shelving location for the item to have while on reseve
-  `enabled` enum('yes','no') NOT NULL DEFAULT 'no', -- If at least one enabled course has this item on reseve, this field will be 'yes', otherwise it will be 'no'
+  `itype` varchar(10) DEFAULT NULL, -- new itemtype for the item to have while on reserve (optional)
+  `ccode` varchar(10) DEFAULT NULL, -- new category code for the item to have while on reserve (optional)
+  `holdingbranch` varchar(10) DEFAULT NULL, -- new holding branch for the item to have while on reserve (optional)
+  `location` varchar(80) DEFAULT NULL, -- new shelving location for the item to have while on reseve (optional)
+  `enabled` enum('yes','no') NOT NULL DEFAULT 'no', -- if at least one enabled course has this item on reseve, this field will be 'yes', otherwise it will be 'no'
   `timestamp` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
    PRIMARY KEY (`ci_id`),
    UNIQUE KEY `itemnumber` (`itemnumber`),
@@ -607,10 +607,10 @@ ALTER TABLE `course_items`
 DROP TABLE IF EXISTS course_reserves;
 CREATE TABLE `course_reserves` (
   `cr_id` int(11) NOT NULL AUTO_INCREMENT,
-  `course_id` int(11) NOT NULL, -- Foreign key to the courses table
-  `ci_id` int(11) NOT NULL, -- Foreign key to the course_items table
-  `staff_note` mediumtext, -- Staff only note
-  `public_note` mediumtext, -- Public, OPAC visible note
+  `course_id` int(11) NOT NULL, -- foreign key to link to courses.course_id
+  `ci_id` int(11) NOT NULL, -- foreign key to link to courses_items.ci_id
+  `staff_note` mediumtext, -- staff only note
+  `public_note` mediumtext, -- public, OPAC visible note
   `timestamp` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
    PRIMARY KEY (`cr_id`),
    UNIQUE KEY `pseudo_key` (`course_id`,`ci_id`),
@@ -1939,6 +1939,7 @@ CREATE TABLE saved_reports (
 
 DROP TABLE IF EXISTS `search_history`;
 CREATE TABLE IF NOT EXISTS `search_history` ( -- patron's opac search history
+  `id` int(11) NOT NULL auto_increment, -- search history id
   `userid` int(11) NOT NULL, -- the patron who performed the search (borrowers.borrowernumber)
   `sessionid` varchar(32) NOT NULL, -- a system generated session id
   `query_desc` varchar(255) NOT NULL, -- the search that was performed
@@ -1947,7 +1948,8 @@ CREATE TABLE IF NOT EXISTS `search_history` ( -- patron's opac search history
   `total` int(11) NOT NULL, -- the total of results found
   `time` timestamp NOT NULL default CURRENT_TIMESTAMP, -- the date and time the search was run
   KEY `userid` (`userid`),
-  KEY `sessionid` (`sessionid`)
+  KEY `sessionid` (`sessionid`),
+  PRIMARY KEY  (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_unicode_ci COMMENT='Opac search history results';
 
 
@@ -1956,18 +1958,18 @@ CREATE TABLE IF NOT EXISTS `search_history` ( -- patron's opac search history
 --
 
 DROP TABLE IF EXISTS `serial`;
-CREATE TABLE `serial` (
-  `serialid` int(11) NOT NULL auto_increment,
-  `biblionumber` varchar(100) NOT NULL default '',
-  `subscriptionid` varchar(100) NOT NULL default '',
-  `serialseq` varchar(100) NOT NULL default '',
-  `status` tinyint(4) NOT NULL default 0,
-  `planneddate` date default NULL,
-  `notes` text,
-  `publisheddate` date default NULL,
-  `claimdate` date default NULL,
-  claims_count int(11) default 0,
-  `routingnotes` text,
+CREATE TABLE `serial` ( -- issues related to subscriptions
+  `serialid` int(11) NOT NULL auto_increment, -- unique key for the issue
+  `biblionumber` varchar(100) NOT NULL default '', -- foreign key for the biblio.biblionumber that this issue is attached to
+  `subscriptionid` varchar(100) NOT NULL default '', -- foreign key to the subscription.subscriptionid that this issue is part of
+  `serialseq` varchar(100) NOT NULL default '', -- issue information (volume, number, etc)
+  `status` tinyint(4) NOT NULL default 0, -- status code for this issue (see manual for full descriptions)
+  `planneddate` date default NULL, -- date expected
+  `notes` text, -- notes
+  `publisheddate` date default NULL, -- date published
+  `claimdate` date default NULL, -- date claimed
+  claims_count int(11) default 0, -- number of claims made related to this issue
+  `routingnotes` text, -- notes from the routing list
   PRIMARY KEY  (`serialid`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_unicode_ci;
 
@@ -2007,15 +2009,15 @@ DROP TABLE IF EXISTS `statistics`;
 CREATE TABLE `statistics` ( -- information related to transactions (circulation and fines) in Koha
   `datetime` datetime default NULL, -- date and time of the transaction
   `branch` varchar(10) default NULL, -- foreign key, branch where the transaction occurred
-  `proccode` varchar(4) default NULL, -- proceedure code 
+  `proccode` varchar(4) default NULL, -- type of procedure used when making payments (does not appear in the code)
   `value` double(16,4) default NULL, -- monetary value associated with the transaction
   `type` varchar(16) default NULL, -- transaction type (locause, issue, return, renew, writeoff, payment, Credit*)
-  `other` mediumtext,
-  `usercode` varchar(10) default NULL,
+  `other` mediumtext, -- used by SIP
+  `usercode` varchar(10) default NULL, -- unused in Koha
   `itemnumber` int(11) default NULL, -- foreign key from the items table, links transaction to a specific item
   `itemtype` varchar(10) default NULL, -- foreign key from the itemtypes table, links transaction to a specific item type
   `borrowernumber` int(11) default NULL, -- foreign key from the borrowers table, links transaction to a specific borrower
-  `associatedborrower` int(11) default NULL,
+  `associatedborrower` int(11) default NULL, -- unused in Koha
   `ccode` varchar(10) default NULL, -- foreign key from the items table, links transaction to a specific collection code
   KEY `timeidx` (`datetime`),
   KEY `branch_idx` (`branch`),
@@ -2090,47 +2092,47 @@ CREATE TABLE subscription_numberpatterns (
 --
 
 DROP TABLE IF EXISTS `subscription`;
-CREATE TABLE `subscription` (
-  `biblionumber` int(11) NOT NULL default 0,
-  `subscriptionid` int(11) NOT NULL auto_increment,
-  `librarian` varchar(100) default '',
-  `startdate` date default NULL,
-  `aqbooksellerid` int(11) default 0,
+CREATE TABLE `subscription` ( -- information related to the subscription
+  `biblionumber` int(11) NOT NULL default 0, -- foreign key for biblio.biblionumber that this subscription is attached to
+  `subscriptionid` int(11) NOT NULL auto_increment, -- unique key for this subscription
+  `librarian` varchar(100) default '', -- the librarian's username from borrowers.userid
+  `startdate` date default NULL, -- start date for this subscription
+  `aqbooksellerid` int(11) default 0, -- foreign key for aqbooksellers.id to link to the vendor
   `cost` int(11) default 0,
   `aqbudgetid` int(11) default 0,
-  `weeklength` int(11) default 0,
-  `monthlength` int(11) default 0,
-  `numberlength` int(11) default 0,
-  `periodicity` integer default null,
+  `weeklength` int(11) default 0, -- subscription length in weeks (will not be filled in if monthlength or numberlength is set)
+  `monthlength` int(11) default 0, -- subscription length in weeks (will not be filled in if weeklength or numberlength is set)
+  `numberlength` int(11) default 0, -- subscription length in weeks (will not be filled in if monthlength or weeklength is set)
+  `periodicity` integer default null, -- frequency type links to subscription_frequencies.id
   countissuesperunit INTEGER NOT NULL DEFAULT 1,
-  `notes` mediumtext,
-  `status` varchar(100) NOT NULL default '',
+  `notes` mediumtext, -- notes
+  `status` varchar(100) NOT NULL default '',  -- status of this subscription
   `lastvalue1` int(11) default NULL,
   `innerloop1` int(11) default 0,
   `lastvalue2` int(11) default NULL,
   `innerloop2` int(11) default 0,
   `lastvalue3` int(11) default NULL,
   `innerloop3` int(11) default 0,
-  `firstacquidate` date default NULL,
-  `manualhistory` tinyint(1) NOT NULL default 0,
-  `irregularity` text,
+  `firstacquidate` date default NULL, -- first issue received date
+  `manualhistory` tinyint(1) NOT NULL default 0, -- yes or no to managing the history manually
+  `irregularity` text, -- any irregularities in the subscription
   skip_serialseq BOOLEAN NOT NULL DEFAULT 0,
   `letter` varchar(20) default NULL,
-  `numberpattern` integer default null,
-  locale VARCHAR(80) DEFAULT NULL,
+  `numberpattern` integer default null, -- the numbering pattern used links to subscription_numberpatterns.id
+  locale VARCHAR(80) DEFAULT NULL, -- for foreign language subscriptions to display months, seasons, etc correctly
   `distributedto` text,
   `internalnotes` longtext,
-  `callnumber` text,
-  `location` varchar(80) NULL default '',
-  `branchcode` varchar(10) NOT NULL default '',
+  `callnumber` text, -- default call number
+  `location` varchar(80) NULL default '', -- default shelving location (items.location)
+  `branchcode` varchar(10) NOT NULL default '', -- default branches (items.homebranch)
   `lastbranch` varchar(10),
-  `serialsadditems` tinyint(1) NOT NULL default '0',
-  `staffdisplaycount` VARCHAR(10) NULL,
-  `opacdisplaycount` VARCHAR(10) NULL,
-  `graceperiod` int(11) NOT NULL default '0',
-  `enddate` date default NULL,
-  `closed` INT(1) NOT NULL DEFAULT 0,
-  `reneweddate` date default NULL,
+  `serialsadditems` tinyint(1) NOT NULL default '0', -- does receiving this serial create an item record
+  `staffdisplaycount` VARCHAR(10) NULL, -- how many issues to show to the staff
+  `opacdisplaycount` VARCHAR(10) NULL, -- how many issues to show to the public
+  `graceperiod` int(11) NOT NULL default '0', -- grace period in days
+  `enddate` date default NULL, -- subscription end date
+  `closed` INT(1) NOT NULL DEFAULT 0, -- yes / no if the subscription is closed
+  `reneweddate` date default NULL, -- date of last renewal for the subscription
   PRIMARY KEY  (`subscriptionid`),
   CONSTRAINT subscription_ibfk_1 FOREIGN KEY (periodicity) REFERENCES subscription_frequencies (id) ON DELETE SET NULL ON UPDATE CASCADE,
   CONSTRAINT subscription_ibfk_2 FOREIGN KEY (numberpattern) REFERENCES subscription_numberpatterns (id) ON DELETE SET NULL ON UPDATE CASCADE
@@ -3088,6 +3090,18 @@ CREATE TABLE `aqorders` ( -- information related to the basket line items
   CONSTRAINT `aqorders_subscriptionid` FOREIGN KEY (`subscriptionid`) REFERENCES `subscription` (`subscriptionid`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_unicode_ci;
 
+--
+-- Table structure for table `aqorder_users`
+--
+
+DROP TABLE IF EXISTS `aqorder_users`;
+CREATE TABLE aqorder_users ( -- Mapping orders to patrons for notification sending
+    ordernumber int(11) NOT NULL, -- the order this patrons receive notifications from (aqorders.ordernumber)
+    borrowernumber int(11) NOT NULL, -- the borrowernumber for the patron receiving notifications for this order (borrowers.borrowernumber)
+    PRIMARY KEY (ordernumber, borrowernumber),
+    CONSTRAINT aqorder_users_ibfk_1 FOREIGN KEY (ordernumber) REFERENCES aqorders (ordernumber) ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT aqorder_users_ibfk_2 FOREIGN KEY (borrowernumber) REFERENCES borrowers (borrowernumber) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_unicode_ci;
 
 --
 -- Table structure for table `aqorders_items`
