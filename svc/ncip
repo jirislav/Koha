@@ -57,30 +57,73 @@ if ($query->request_method eq "GET") {
 	}
 
 	if ($service eq 'lookup_item') {
-		my $itemid = $query->param('itemid');
-		if (not defined $itemid or not is_integer($itemid)) {
-		        print $query->header(-type => 'text/plain', -status => '400 Bad Request');
-			print "Param itemid is undefined or is not a number..";
-		        exit 0;
+
+		my $bibid = $query->param('bibid');
+		if (defined $bibid) {
+			# example query: http://koha-server.net:8080/cgi-bin/koha/svc/ncip?service=lookup_item&bibid=295
+
+			if(is_integer($bibid)) {
+				fetch_marc_biblio($query, $bibid);
+				exit 0;
+			} else {
+				print $query->header(-type => 'text/plain', -status => '400 Bad Request');
+				print "Param bibid is not a number..";
+				exit 0;
+			}
 		}
 
-		if (defined $query->param('getHoldQueueLength') or defined $query->param('getCirculationStatus')) {
+		my $itemid = $query->param('itemid');
+		my $barcode = $query->param('barcode');
+
+		if (not defined $itemid or not is_integer($itemid)) {
+			# query example: http://koha-server.net:8080/cgi-bin/koha/svc/ncip?service=lookup_item&barcode=0098137
+			if (not defined $barcode or not is_integer($barcode)) {
+				print $query->header(-type => 'text/plain', -status => '400 Bad Request');
+				print "Param itemid or barcode is/are undefined or is/are not number(s)..";
+				exit 0;
+			} else {
+				$itemid = GetItemnumberFromBarcode($barcode);
+			}
+		}
+
+
+		my $iteminfo = C4::Items::GetItem($itemid, undef, 1); # Needed to parse bibid & circulation status if desired ..
+		my $bibid = $iteminfo->{'biblioitemnumber'};
+
+		if (defined $query->param('holdQueueLengthDesired') or defined $query->param('circulationStatusDesired')) {
+			# example query: http://koha-server.net:8080/cgi-bin/koha/svc/ncip?service=lookup_item&itemid=383&holdQueueLengthDesired&circulationStatusDesired
+
 			my $result;
-			if (defined $query->param('getHoldQueueLength')) {
-				my $holds = C4::Reserves::GetReservesFromBiblionumber({ biblionumber => $itemid, all_dates => 1 });
+                        my $holds = C4::Reserves::GetReservesFromBiblionumber({
+                                biblionumber => $bibid,
+                                itemnumber => $itemid,
+                                all_dates => 1
+                        });
+			if (defined $query->param('holdQueueLengthDesired')) {
 				$result->{'holdQueueLength'} = scalar ( @$holds );
 			}
-			if (defined $query->param('getCirculationStatus')) {	
-				my @itemsinfo = C4::Items::GetItemsInfo($itemid);
-				$result->{'items'} = \@itemsinfo;
+			if (defined $query->param('circulationStatusDesired')) {
+				if (scalar ( @$holds ) == 0) {
+					$result->{'circulationStatus'} = parse_circulation_status($iteminfo);
+				} else {
+					$result->{'circulationStatus'} = 'On Loan';
+				}
+			}
+			if (defined $query->param('itemUseRestrictionTypeDesired')) {
+				#TODO: Parse item's restrictions ..
 			}
 	                print $query->header(-type => 'text/plain',-charset => 'utf-8',);
 			print to_json($result);
+		} elsif (not defined $query->param('getBiblioContext')) {
+			# example query: http://koha-server.net:8080/cgi-bin/koha/svc/ncip?service=lookup_item&itemid=383
+			fetch_marc_item($query, $bibid, $itemid);
 		} else {
-			fetch_bib($query, $itemid);
+			# query example: http://koha-server.net:8080/cgi-bin/koha/svc/ncip?service=lookup_item&itemid=383&getBiblioContext
+			# another: http://koha-server.net:8080/cgi-bin/koha/svc/ncip?service=lookup_item&barcode=0098137&getBiblioContext
+			fetch_marc_biblio($query, $bibid);
 		}
 		exit 0;
-	} elsif ($service eq 'lookup_user') { # TODO: If Loaned items desired, use this somehow: http://188.166.14.82:8080/cgi-bin/koha/svc/checkouts?borrowernumber=3
+	} elsif ($service eq 'lookup_user') { 
 		my $userid = $query->param('userId');
 		if ($userid eq '') {
 		        print $query->header(-type => 'text/plain', -status => '400 Bad Request');
@@ -134,7 +177,7 @@ if ($query->request_method eq "GET") {
 		# two possibilities: Have either UserId & ItemId or RequestId ..
 		exit 0;
 	} elsif ($service eq 'request_item') {
-
+		
 		exit 0;
 	} elsif ($service eq 'renew_item') {
 
@@ -155,16 +198,43 @@ if ($query->request_method eq "GET") {
 
 exit 0;
 
-sub fetch_bib {
+sub fetch_marc_biblio {
     my $query = shift;
-    my $biblionumber = shift;
-    my $record = GetMarcBiblio( $biblionumber, "Y" );
+    my $bibid = shift;
+    my $record = C4::Biblio::GetMarcBiblio( $bibid, 1 );
     if  (defined $record) {
         print $query->header(-type => 'text/xml',-charset => 'utf-8',);# Reason why we use xml & marc here is because of all Koha items are being held in DB in marc format, thus it's much quicker to parse it this way
         print $record->as_xml_record();
     } else {
-        print $query->header(-type => 'text/xml', -status => '404 Not Found');
+        print $query->header(-type => 'text/plain', -status => '404 Not Found');
     }
+}
+sub fetch_marc_item {
+    my $query = shift;
+    my $bibid = shift;
+    my $itemid = shift;
+    my $record = C4::Items::GetMarcItem( $bibid, $itemid );
+    if  (defined $record) {
+        print $query->header(-type => 'text/xml',-charset => 'utf-8',);# Reason why we use xml & marc here is because of all Koha items are being held in DB in marc format, thus it's much quicker to parse it this way
+        print $record->as_xml_record();
+    } else {
+        print $query->header(-type => 'text/plain', -status => '404 Not Found');
+    }
+}
+
+sub parse_circulation_status {
+	my $item = shift;
+	if ( $item->{datedue} or $item->{onloan} ) {
+		return 'On Loan';
+	}
+	if ( $item->{transfertwhen} ) {
+		return 'In Transit Between Library Locations';
+	}
+	if ( $item->{itemnotforloan} or $item->{notforloan_per_itemtype} or $item->{itemlost} or $item->{withdrawn} or $item->{damaged} ) {
+		return 'Not Available';
+	}
+
+	return 'Available On Shelf';
 }
 
 sub is_integer {
