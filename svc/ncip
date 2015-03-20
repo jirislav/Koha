@@ -139,6 +139,18 @@ if ($query->request_method eq "GET") {
 
 		my $results;
 
+		$results->{'userInfo'} = C4::NCIP::LookupUser::lookupUser(
+				{
+				input => $query,
+				userid => $userid
+				});
+
+		if( scalar ( @{$results->{'userInfo'}->{'patrons'}} ) == 0) {
+			print $query->header(-type => 'text/plain', -status => '404 Not Found');
+			print "User you were looking up was not found..";
+			exit 0;
+		}
+		
 		if (defined $query->param('loanedItemsDesired')) {
 			$results->{'loanedItems'} = C4::NCIP::LookupUser::parseLoanedItems(
 					{
@@ -166,11 +178,6 @@ if ($query->request_method eq "GET") {
 					});
 		}
 
-		$results->{'userInfo'} = C4::NCIP::LookupUser::lookupUser(
-				{
-				input => $query,
-				userid => $userid
-				});		
 
 		print $query->header(-type => 'text/plain',-charset => 'utf-8',);
 		print to_json($results);
