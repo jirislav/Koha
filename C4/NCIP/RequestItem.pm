@@ -35,7 +35,6 @@ sub placeHold {
         $notes,  $rankrequest,  $request
     ) = @_;
     my @rank = $rankrequest;
-    # TODO: Implement request Type ..
     my $borrower = GetMember('borrowernumber' => $borrowernumber);
     my @bibitems = '';
 

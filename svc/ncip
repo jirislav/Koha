@@ -37,6 +37,8 @@ use C4::Output qw( output_with_http_headers );
 use C4::Reserves qw(GetReservesFromBiblionumber);
 use C4::Items;
 
+use Koha::DateUtils qw(output_pref);
+
 my $query = new CGI;
 binmode STDOUT, ':encoding(UTF-8)';
 
@@ -385,28 +387,15 @@ sub processLookupRequest {
     my $query     = shift;
     my $requestId = $query->param('requestId');
 
-    my $results;
+    my $result;
     if (defined $requestId and is_integer($requestId)) {
-        $results = C4::Reserves::GetReserve($requestId);
+        $result = C4::Reserves::GetReserve($requestId);
     } else {
         my $userId = $query->param('userId');
         my $itemId = $query->param('itemId');
 
         if (defined $userId and defined $itemId) {
-
-            my $dbh = C4::Context->dbh;
-            my $sth;
-            $sth = $dbh->prepare("
-		SELECT *
-		FROM reserves
-		WHERE borrowernumber=?
-		AND itemnumber =?
-		ORDER BY reservedate
-		");
-            $sth->execute($userId, $itemId);
-
-            $results = ${$sth->fetchall_arrayref({})}[0]; # Will always be only one correct ..
-
+            $result = getReserveFromUserIdAndItemId($userId, $itemId);
         } else {
             print $query->header(
                 -type   => 'text/plain',
@@ -417,19 +406,102 @@ sub processLookupRequest {
             exit 0;
         }
     }
+    if (not defined $result) {
+        print $query->header(
+            -type   => 'text/plain',
+            -status => '404 Not Found'
+        );
+        print "Request not found..";
+        exit 0;
+    }
     print $query->header(-type => 'text/plain', -charset => 'utf-8',);
-    print to_json($results);
-
-    # two possibilities: Have either UserId & ItemId or RequestId ..
-    exit 0;
-}
-
-sub processRenewItem {
+    print to_json($result);
 
     exit 0;
 }
 
 sub processCancelRequestItem {
+    my $query     = shift;
+    my $userId    = $query->param('userId');
+    my $itemId    = $query->param('itemId');
+    my $requestId = $query->param('requestId');
+    my $result;
+    if (defined $userId and defined $itemId) {
+        my $reserve = getReserveFromUserIdAndItemId($userId, $itemId);
+        if ($reserve) {
+            C4::Reserves::CancelReserve($reserve);
+            $result->{'status'} = 'ok';
+        } else {
+            print $query->header(
+                -type   => 'text/plain',
+                -status => '404 Not Found'
+            );
+            print "Request not found..";
+            exit 0;
+        }
+    } elsif (defined $userId and defined $requestId) {
+        my $reserve = C4::Reserves::GetReserve($requestId);
+        if ($reserve) {
+            if ($reserve->{'borrowernumber'} eq $userId) {
+                C4::Reserves::CancelReserve($reserve);
+                $result->{'status'} = 'ok';
+            } else {
+                print $query->header(
+                    -type   => 'text/plain',
+                    -status => '400 Bad Request'
+                );
+                print 'Request doesn\'t belong to this patron ..';
+                exit 0;
+            }
+        } else {
+            print $query->header(
+                -type   => 'text/plain',
+                -status => '404 Not Found'
+            );
+            print "Request not found..";
+            exit 0;
+        }
+    } else {
+        print $query->header(
+            -type   => 'text/plain',
+            -status => '400 Bad Request'
+        );
+        print
+            'You have to specify either both \'userId\' & \'itemId\' or both \'userId\' & \'requestId\'..';
+        exit 0;
+    }
+    print $query->header(-type => 'text/plain', -charset => 'utf-8',);
+    print to_json($result);
+
+    exit 0;
+}
+
+sub processRenewItem {
+    my $query  = shift;
+    my $itemId = $query->param('itemId');
+    my $userId = $query->param('userId');
+    my $branch = $query->param('branch') || C4::Context->userenv->{'branch'};
+
+	#FIXME: Restict DateDue maximally to default interval defined at https://github.com/jirislav/Koha/blob/master/C4/Circulation.pm#L2800-L2812
+    my $dateDue;
+    if ($query->param('desiredDateDue')) {
+        $dateDue = dt_from_string($query->param('desiredDateDue'));
+        $dateDue->set_hour(23);
+        $dateDue->set_minute(59);
+    }
+    my ($okay, $error)
+        = C4::Circulation::CanBookBeRenewed($userId, $itemId, '0');
+
+    my $result;
+    if ($okay) {
+        $dateDue = C4::Circulation::AddRenewal($userId, $itemId, $branch, $dateDue);
+        $result->{'dateDue'} = output_pref( { dt => $dateDue, as_due_date => 1 } );;
+    } else {
+        $result->{'error'} = $error;
+    }
+
+    print $query->header(-type => 'text/plain', -charset => 'utf-8',);
+    print to_json($result);
 
     exit 0;
 }
@@ -485,6 +557,24 @@ sub parse_circulation_status {
     }
 
     return 'Available On Shelf';
+}
+
+sub getReserveFromUserIdAndItemId {
+    my $userId = shift;
+    my $itemId = shift;
+    my $dbh    = C4::Context->dbh;
+    my $sth;
+    $sth = $dbh->prepare("
+		SELECT *
+		FROM reserves
+		WHERE borrowernumber=?
+		AND itemnumber =?
+		ORDER BY reservedate
+		");
+    $sth->execute($userId, $itemId);
+
+    return ${$sth->fetchall_arrayref({})}[0];
+
 }
 
 sub is_integer {
