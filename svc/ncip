@@ -481,21 +481,80 @@ sub processRenewItem {
     my $itemId = $query->param('itemId');
     my $userId = $query->param('userId');
     my $branch = $query->param('branch') || C4::Context->userenv->{'branch'};
+    my $biblio = GetBiblioFromItemNumber($itemId);
 
-	#FIXME: Restict DateDue maximally to default interval defined at https://github.com/jirislav/Koha/blob/master/C4/Circulation.pm#L2800-L2812
-    my $dateDue;
-    if ($query->param('desiredDateDue')) {
-        $dateDue = dt_from_string($query->param('desiredDateDue'));
+    unless ($itemId) {
+        print $query->header(
+            -type   => 'text/plain',
+            -status => '400 Bad Request'
+        );
+        print "itemId is undefined..";
+        exit 0;
+    }
+
+    unless ($userId) {
+        print $query->header(
+            -type   => 'text/plain',
+            -status => '400 Bad Request'
+        );
+        print "userId is undefined..";
+        exit 0;
+    }
+
+    my $dateDue = $query->param('desiredDateDue');
+    if ($dateDue) {    # Need to restrict maximal DateDue ..
+        my $dbh = C4::Context->dbh;
+        # Find the issues record for this book
+        my $sth = $dbh->prepare(
+            "SELECT branchcode FROM issues WHERE itemnumber = ?");
+        $sth->execute($itemId);
+        my $issueBranchCode = $sth->fetchrow_array;
+        unless ($issueBranchCode) {
+            print $query->header(
+                -type   => 'text/plain',
+                -status => '404 Not Found'
+            );
+            print 'Checkout wasn\'t found .. Nothing to renew..';
+            exit 0;
+        }
+
+        my $itemtype
+            = (C4::Context->preference('item-level_itypes'))
+            ? $biblio->{'itype'}
+            : $biblio->{'itemtype'};
+
+        my $now = DateTime->now(time_zone => C4::Context->tz());
+        my $borrower = C4::Members::GetMember(borrowernumber => $userId);
+        unless ($borrower) {
+            print $query->header(
+                -type   => 'text/plain',
+                -status => '404 Not Found'
+            );
+            print 'User wasn\'t found ..';
+            exit 0;
+        }
+
+        my $maxDateDue
+            = C4::Circulation::CalcDateDue($now, $itemtype, $issueBranchCode,
+            $borrower, 'is a renewal');
+
+        $dateDue = Koha::DateUtils::dt_from_string($dateDue);
         $dateDue->set_hour(23);
         $dateDue->set_minute(59);
+        if ($dateDue > $maxDateDue) {
+            $dateDue = $maxDateDue;
+        }    # Here is the restriction done ..
+
     }
     my ($okay, $error)
         = C4::Circulation::CanBookBeRenewed($userId, $itemId, '0');
 
     my $result;
     if ($okay) {
-        $dateDue = C4::Circulation::AddRenewal($userId, $itemId, $branch, $dateDue);
-        $result->{'dateDue'} = output_pref( { dt => $dateDue, as_due_date => 1 } );;
+        $dateDue = C4::Circulation::AddRenewal($userId, $itemId, $branch,
+            $dateDue);
+        $result->{'dateDue'}
+            = output_pref({dt => $dateDue, as_due_date => 1});
     } else {
         $result->{'error'} = $error;
     }

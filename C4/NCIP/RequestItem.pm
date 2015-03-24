@@ -29,7 +29,7 @@ use C4::Reserves;
 use C4::Circulation;
 use C4::Members;
 
-sub placeHold {
+sub placeHold { # FIXME: I need to refactor :'(
     my ($input,  $biblionumber, $checkitem, $borrowernumber,
         $branch, $startdate,    $title,     $expirationdate,
         $notes,  $rankrequest,  $request
