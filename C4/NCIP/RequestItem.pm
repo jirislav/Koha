@@ -30,73 +30,139 @@ use C4::Circulation;
 use C4::Members;
 
 sub placeHold {
-    my ($params) = @_;
-    my $input = $params->{input};
+    my ($input,  $biblionumber, $checkitem, $borrowernumber,
+        $branch, $startdate,    $title,     $expirationdate,
+        $notes,  $rankrequest,  $request
+    ) = @_;
+    my @rank = $rankrequest;
+    # TODO: Implement request Type ..
+    my $borrower = GetMember('borrowernumber' => $borrowernumber);
+    my @bibitems = '';
 
-    my $bibid       = $params->{bibid};
-    my $itemid      = $params->{itemid};
-    my $userid      = $params->{userid};
-    my $requestType = $params->{requestType};
-
-    my $branch         = $params->{pickup};
-    my $startdate      = $params->{earliestDateNeeded} || '';
-    my $borrower       = GetMember('borrowernumber' => $userid);
-    my $expirationdate = $input->param('pickupExpiryDate'); #FIXME: Cannot forward this properly .. 
+    my $multi_hold    = '';
+    my $biblionumbers = $biblionumber . '/';
+    my $bad_bibs      = '';
+    my @reqbib        = '';
+    my %bibinfos      = ();
+    my @biblionumbers = split '/', $biblionumbers;
+    foreach my $bibnum (@biblionumbers) {
+        my %bibinfo = ();
+        $bibinfo{title}    = $input->param("title_$bibnum");
+        $bibinfo{rank}     = $input->param("rank_$bibnum");
+        $bibinfos{$bibnum} = \%bibinfo;
+    }
 
     my $found;
-    my $notes;
-    my $title;
 
-    my $results;
+# if we have an item selectionned, and the pickup branch is the same as the holdingbranch
+# of the document, we force the value $rank and $found .
+    if ($checkitem ne '') {
+        $rank[0] = '0' unless C4::Context->preference('ReservesNeedReturns');
+        my $item = $checkitem;
+        $item = GetItem($item);
+        if ($item->{'holdingbranch'} eq $branch) {
+            $found = 'W'
+                unless C4::Context->preference('ReservesNeedReturns');
+        }
+    }
     if ($borrower) {
-        if (not defined $bibid or not defined $branch) {
-            my $item = GetItem($itemid);
-            if (not defined $branch) {
-                $branch = $item->{'holdingbranch'};
+        foreach my $biblionumber (keys %bibinfos) {
+            my $count = @bibitems;
+            @bibitems = sort @bibitems;
+            my $i2 = 1;
+            my @realbi;
+            $realbi[0] = $bibitems[0];
+            for (my $i = 1; $i < $count; $i++) {
+                my $i3 = $i2 - 1;
+                if ($realbi[$i3] ne $bibitems[$i]) {
+                    $realbi[$i2] = $bibitems[$i];
+                    $i2++;
+                }
             }
-            if (not defined $bibid) {
-                $bibid = $item->{'biblionumber'};
+            my $const;
+
+            if ($checkitem ne '') {
+                my $item = GetItem($checkitem);
+                if ($item->{'biblionumber'} ne $biblionumber) {
+                    $biblionumber = $item->{'biblionumber'};
+                }
+            }
+
+            if ($multi_hold) {
+                my $bibinfo = $bibinfos{$biblionumber};
+                AddReserve(
+                    $branch,         $borrower->{'borrowernumber'},
+                    $biblionumber,   'a',
+                    [$biblionumber], $bibinfo->{rank},
+                    $startdate,      $expirationdate,
+                    $notes,          $bibinfo->{title},
+                    $checkitem,      $found
+                );
+            } else {
+                if ($input->param('request') eq 'any') {
+                    # place a request on 1st available
+                    AddReserve(
+                        $branch,       $borrower->{'borrowernumber'},
+                        $biblionumber, 'a',
+                        \@realbi,      $rank[0],
+                        $startdate,    $expirationdate,
+                        $notes,        $title,
+                        $checkitem,    $found
+                    );
+                } elsif ($reqbib[0] ne '') {
+                    AddReserve(
+                        $branch,       $borrower->{'borrowernumber'},
+                        $biblionumber, 'o',
+                        \@reqbib,      $rank[0],
+                        $startdate,    $expirationdate,
+                        $notes,        $title,
+                        $checkitem,    $found
+                    );
+                } else {
+                    AddReserve(
+                        $branch,       $borrower->{'borrowernumber'},
+                        $biblionumber, 'a',
+                        \@realbi,      $rank[0],
+                        $startdate,    $expirationdate,
+                        $notes,        $title,
+                        $checkitem,    $found
+                    );
+                }
             }
         }
 
-        my $reserves = GetReservesFromBiblionumber(
-            {biblionumber => $bibid, itemnumber => $itemid, all_dates => 1})
-            ;    # Get rank ..
-
-	if($requestType =~ '/^Loan$/' and scalar ( @$reserves ) != 0) {
-		print $input->header(-type => 'text/plain',-charset => 'utf-8', -status => '409 Conflict');
-		print "Loan not possible  .. holdqueuelength exists";
-		exit 0;
-	}
-
-        foreach my $res (@$reserves) {
-            if ($res->{borrowernumber} eq $userid) {
-		print $input->header(-type => 'text/plain',-charset => 'utf-8', -status => '403 Forbidden');
-                print "User already has item requested";
-		exit 0;
+        #Parse RequestId of the last requested item ..
+        my @reserves = GetReservesFromBiblionumber(
+            {   biblionumber => $biblionumber,
+                itemnumber   => $checkitem,
+                all_dates    => 1
             }
-        }
-        my $rank = scalar(@$reserves);
-
-        my $requestId = AddReserve(
-            $branch,    $borrower->{'borrowernumber'},
-            $bibid,     'a',
-            [$bibid],   ++$rank,
-            $startdate, $expirationdate,
-            $notes,     $title,
-            $itemid,    $found
         );
 
-	if (not defined $requestId) {
-        	my @reserves = GetReservesFromBiblionumber({biblionumber => $bibid, itemnumber => $itemid, all_dates => 1});# Get rank ..
-		$requestId = $reserves[-1][-1]->{'reserve_id'};
-	}
+        my $lastReserve = $reserves[-1][-1];
 
-	print $input->header(-type => 'text/plain',-charset => 'utf-8', -status => '201 Created');
-	$results->{'response'} = $expirationdate;
-    	print to_json($results);
+        my $results;
+        if (    defined $lastReserve
+            and $lastReserve->{'priority'} eq $rankrequest
+            and $lastReserve->{'borrowernumber'} eq $borrowernumber)
+        {
+            $results->{'status'}    = 'ok';
+            $results->{'requestId'} = $lastReserve->{'reserve_id'};
+        } else {
+            $results->{'status'} = 'failed';
+        }
+        #	$results->{'reserves'} = $reserves[-1];
+
+        print $input->header(
+            -type    => 'text/plain',
+            -charset => 'utf-8',
+        );
+        print to_json($results);
     } else {
-	print $input->header(-type => 'text/plain',-charset => 'utf-8', -status => '404 Not Found');
+        print $input->header(
+            -type   => 'text/plain',
+            -status => '404 Not Found'
+        );
         print "User not found..";
     }
     exit 0;
