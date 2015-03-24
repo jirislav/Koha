@@ -67,293 +67,17 @@ if ($query->request_method eq "GET") {
     }
 
     if ($service eq 'lookup_item') {
-
-        my $bibid = $query->param('bibid');
-        if (defined $bibid) {
-# example query: http://koha-server.net:8080/cgi-bin/koha/svc/ncip?service=lookup_item&bibid=295
-
-            if (is_integer($bibid)) {
-                fetch_marc_biblio($query, $bibid);
-                exit 0;
-            } else {
-                print $query->header(
-                    -type   => 'text/plain',
-                    -status => '400 Bad Request'
-                );
-                print "Param bibid is not a number..";
-                exit 0;
-            }
-        }
-
-        my $itemid  = $query->param('itemid');
-        my $barcode = $query->param('barcode');
-
-        if (not defined $itemid or not is_integer($itemid)) {
-# query example: http://koha-server.net:8080/cgi-bin/koha/svc/ncip?service=lookup_item&barcode=0098137
-            if (not defined $barcode or not is_integer($barcode)) {
-                print $query->header(
-                    -type   => 'text/plain',
-                    -status => '400 Bad Request'
-                );
-                print
-                    "Param itemid or barcode is/are undefined or is/are not number(s)..";
-                exit 0;
-            } else {
-                $itemid = GetItemnumberFromBarcode($barcode);
-            }
-        }
-
-        my $iteminfo = C4::Items::GetItem($itemid, undef, 1)
-            ; # Needed to parse bibid & circulation status if desired and also easily determine whether sub GetItemnumberFromBarcode succeeded ..
-        if (not defined $iteminfo) {
-            print $query->header(
-                -type   => 'text/plain',
-                -status => '404 Not Found'
-            );
-            print "Item you are looking for was not found..";
-            exit 0;
-        }
-
-        my $bibid = $iteminfo->{'biblioitemnumber'};
-
-        if (   defined $query->param('holdQueueLengthDesired')
-            or defined $query->param('circulationStatusDesired'))
-        {
-# example query: http://koha-server.net:8080/cgi-bin/koha/svc/ncip?service=lookup_item&itemid=383&holdQueueLengthDesired&circulationStatusDesired
-
-            my $result;
-            my $holds = C4::Reserves::GetReservesFromBiblionumber(
-                {   biblionumber => $bibid,
-                    itemnumber   => $itemid,
-                    all_dates    => 1
-                }
-            );
-            if (defined $query->param('holdQueueLengthDesired')) {
-                $result->{'holdQueueLength'} = scalar(@$holds);
-            }
-            if (defined $query->param('circulationStatusDesired')) {
-                if (scalar(@$holds) == 0) { # FIXME this is wrong .. doesnt check number of holds ..
-                    $result->{'circulationStatus'}
-                        = parse_circulation_status($iteminfo);
-                } else {
-                    $result->{'circulationStatus'} = 'On Loan';
-                }
-            }
-            if (defined $query->param('itemUseRestrictionTypeDesired')) {
-                #TODO: Parse item's restrictions ..
-            }
-            print $query->header(-type => 'text/plain', -charset => 'utf-8',);
-            print to_json($result);
-        } elsif (not defined $query->param('getBiblioContext')) {
-# example query: http://koha-server.net:8080/cgi-bin/koha/svc/ncip?service=lookup_item&itemid=383
-            fetch_marc_item($query, $bibid, $itemid);
-        } else {
-# query example: http://koha-server.net:8080/cgi-bin/koha/svc/ncip?service=lookup_item&itemid=383&getBiblioContext
-# another: http://koha-server.net:8080/cgi-bin/koha/svc/ncip?service=lookup_item&barcode=0098137&getBiblioContext
-            fetch_marc_biblio($query, $bibid);
-        }
-        exit 0;
+        processLookupItem($query);
     } elsif ($service eq 'lookup_user') {
-        my $userid = $query->param('userId');
-        if ($userid eq '') {
-            print $query->header(
-                -type   => 'text/plain',
-                -status => '400 Bad Request'
-            );
-            print "Param userId is undefined..";
-            exit 0;
-        }
-
-        my $results;
-
-        $results->{'userInfo'} = C4::NCIP::LookupUser::lookupUser(
-            {   input  => $query,
-                userid => $userid
-            }
-        );
-
-        if (scalar(@{$results->{'userInfo'}->{'patrons'}}) == 0) {
-            print $query->header(
-                -type   => 'text/plain',
-                -status => '404 Not Found'
-            );
-            print "User you were looking up was not found..";
-            exit 0;
-        }
-
-        if (defined $query->param('loanedItemsDesired')) {
-            $results->{'loanedItems'}
-                = C4::NCIP::LookupUser::parseLoanedItems(
-                {   input  => $query,
-                    userid => $userid,
-                    offset => 0,
-                    size   => -1
-                }
-                );
-        }
-        if (defined $query->param('requestedItemsDesired')) {
-            $results->{'requestedItems'}
-                = C4::NCIP::LookupUser::parseRequestedItems(
-                {   input  => $query,
-                    userid => $userid,
-                    offset => 0,
-                    size   => -1,
-                    branch => C4::Context->userenv->{'branch'}
-                }
-                );
-        }
-        if (defined $query->param('userFiscalAccountDesired')) {
-            $results->{'userFiscalAccount'}
-                = C4::NCIP::LookupUser::parseUserFiscalAccount(
-                {   input  => $query,
-                    userid => $userid
-                }
-                );
-        }
-
-        print $query->header(-type => 'text/plain', -charset => 'utf-8',);
-        print to_json($results);
-        exit 0;
+        processLookupUser($query);
     } elsif ($service eq 'lookup_request') {
-        # two possibilities: Have either UserId & ItemId or RequestId ..
-        exit 0;
+        processLookupRequest($query);
     } elsif ($service eq 'request_item') {
-        my $userid = $query->param('userId');
-        if ($userid eq '') {
-            print $query->header(
-                -type   => 'text/plain',
-                -status => '400 Bad Request'
-            );
-            print "Param userId is undefined..";
-            exit 0;
-        }
-
-        my $bibid   = $query->param('bibid');
-        my $itemid  = $query->param('itemid');
-        my $barcode = $query->param('barcode');
-
-        if (defined $bibid and (defined $itemid or defined $barcode)) {
-            print $query->header(
-                -type   => 'text/plain',
-                -status => '400 Bad Request'
-            );
-            print
-                "Cannot process both bibid & itemid/barcode .. you have to choose only one";
-            exit 0;
-        }
-
-        my $itemLevelHold = 1;
-        if (not defined $itemid or not is_integer($itemid)) {
-
-            if (not defined $bibid) {
-                if (not defined $barcode or not is_integer($barcode)) {
-                    print $query->header(
-                        -type   => 'text/plain',
-                        -status => '400 Bad Request'
-                    );
-                    print
-                        "Param itemid or barcode is/are undefined or is/are not number(s)..\n";
-                    print "Neither param bibid is specified..";
-                    exit 0;
-                } else {
-                    $itemid = GetItemnumberFromBarcode($barcode);
-                }
-            } else {
-                $itemLevelHold = 0;
-            }
-        }
-        my $pickupLocation = $query->param('pickupLocation');
-
-        if ($itemLevelHold) {
-            my $iteminfo = C4::Items::GetItem($itemid, undef, 1)
-                ;    # Needed to determine whether itemId exits ..
-            if (not defined $iteminfo) {
-                print $query->header(
-                    -type   => 'text/plain',
-                    -status => '404 Not Found'
-                );
-                print "Item you want to request was not found..";
-                exit 0;
-            }
-            if ($pickupLocation == '') {
-                $pickupLocation = $iteminfo->{'holdingbranch'};
-            }
-            $bibid = $iteminfo->{'biblionumber'};
-        } else {
-            $pickupLocation = C4::Context->userenv->{'branch'};
-            my $biblio = GetBiblio($bibid);
-            if (not defined $biblio) {
-                print $query->header(
-                    -type   => 'text/plain',
-                    -status => '404 Not Found'
-                );
-                print "Record you want to request was not found..";
-                exit 0;
-            }
-        }
-
-        my $requestType = $query->param('requestType')
-            || 'Hold'
-            ; # RequestType specifies if user wants the book now or doesn't mind to get into queue
-
-        if (not $requestType =~ /^Loan$|^Hold$/i) {
-            print $query->header(
-                -type   => 'text/plain',
-                -status => '400 Bad Request'
-            );
-            print "Param requestType not found/recognized..";
-            exit 0;
-        }
-        # Process rank & whether user hasn't requested this item yet ..
-        my $reserves = GetReservesFromBiblionumber(
-            {biblionumber => $bibid, itemnumber => $itemid, all_dates => 1})
-            ;    # Get rank ..
-
-        foreach my $res (@$reserves) {
-            if ($res->{borrowernumber} eq $userid) {
-                print $query->header(
-                    -type   => 'text/plain',
-                    -status => '403 Forbidden'
-                );
-                print "User already has item requested";
-                exit 0;
-            }
-        }
-
-        my $rank = scalar(@$reserves);
-
-        if ($requestType =~ '/^Loan$/' and $rank != 0) {
-            print $query->header(
-                -type   => 'text/plain',
-                -status => '409 Conflict'
-            );
-            print "Loan not possible  .. holdqueuelength exists";
-            exit 0;
-        }
-
-        my $expirationdate = $query->param('pickupExpiryDate');
-        my $startdate      = $query->param('earliestDateNeeded');
-        my $notes          = $query->param('notes');
-
-        my $title = $query->param('title');
-
-        ++$rank;
-        if ($itemLevelHold) {
-            C4::NCIP::RequestItem::placeHold($query, $bibid, $itemid, $userid,
-                $pickupLocation, $startdate, $title, $expirationdate, $notes,
-                $rank, undef);
-        } else {
-            C4::NCIP::RequestItem::placeHold($query, $bibid, undef, $userid,
-                $pickupLocation, $startdate, $title, $expirationdate, $notes,
-                $rank, 'Any');
-        }
-
+        processRequestItem($query);
     } elsif ($service eq 'renew_item') {
-
-        exit 0;
+        processRenewItem($query);
     } elsif ($service eq 'cancel_request_item') {
-
-        exit 0;
+        processCancelRequestItem($query);
     } else {
         print $query->header(
             -type   => 'text/plain',
@@ -367,12 +91,346 @@ if ($query->request_method eq "GET") {
         -type   => 'text/plain',
         -status => '405 Method not allowed'
     );
-    print XMLout(
-        {error => 'Method not allowed'},
-        NoAttr   => 1,
-        RootName => 'response',
-        XMLDecl  => 1
+    print 'Only GET method is allowed..';
+    exit 0;
+}
+
+sub processLookupItem {
+    my $query = shift;
+    my $bibid = $query->param('bibid');
+    if (defined $bibid) {
+# example query: http://koha-server.net:8080/cgi-bin/koha/svc/ncip?service=lookup_item&bibid=295
+
+        if (is_integer($bibid)) {
+            fetch_marc_biblio($query, $bibid);
+            exit 0;
+        } else {
+            print $query->header(
+                -type   => 'text/plain',
+                -status => '400 Bad Request'
+            );
+            print "Param bibid is not a number..";
+            exit 0;
+        }
+    }
+
+    my $itemid  = $query->param('itemid');
+    my $barcode = $query->param('barcode');
+
+    if (not defined $itemid or not is_integer($itemid)) {
+# query example: http://koha-server.net:8080/cgi-bin/koha/svc/ncip?service=lookup_item&barcode=0098137
+        if (not defined $barcode or not is_integer($barcode)) {
+            print $query->header(
+                -type   => 'text/plain',
+                -status => '400 Bad Request'
+            );
+            print
+                "Param itemid or barcode is/are undefined or is/are not number(s)..";
+            exit 0;
+        } else {
+            $itemid = GetItemnumberFromBarcode($barcode);
+        }
+    }
+
+    my $iteminfo = C4::Items::GetItem($itemid, undef, 1)
+        ; # Needed to parse bibid & circulation status if desired and also easily determine whether sub GetItemnumberFromBarcode succeeded ..
+    if (not defined $iteminfo) {
+        print $query->header(
+            -type   => 'text/plain',
+            -status => '404 Not Found'
+        );
+        print "Item you are looking for was not found..";
+        exit 0;
+    }
+
+    my $bibid = $iteminfo->{'biblioitemnumber'};
+
+    if (   defined $query->param('holdQueueLengthDesired')
+        or defined $query->param('circulationStatusDesired'))
+    {
+# example query: http://koha-server.net:8080/cgi-bin/koha/svc/ncip?service=lookup_item&itemid=383&holdQueueLengthDesired&circulationStatusDesired
+
+        my $result;
+        my $holds = C4::Reserves::GetReservesFromBiblionumber(
+            {   biblionumber => $bibid,
+                itemnumber   => $itemid,
+                all_dates    => 1
+            }
+        );
+        if (defined $query->param('holdQueueLengthDesired')) {
+            $result->{'holdQueueLength'} = scalar(@$holds);
+        }
+        if (defined $query->param('circulationStatusDesired')) {
+            if (scalar(@$holds) == 0)
+            {    # FIXME this is wrong .. doesnt check number of holds ..
+                $result->{'circulationStatus'}
+                    = parse_circulation_status($iteminfo);
+            } else {
+                $result->{'circulationStatus'} = 'On Loan';
+            }
+        }
+        if (defined $query->param('itemUseRestrictionTypeDesired')) {
+            #TODO: Parse item's restrictions ..
+        }
+        print $query->header(-type => 'text/plain', -charset => 'utf-8',);
+        print to_json($result);
+    } elsif (not defined $query->param('getBiblioContext')) {
+# example query: http://koha-server.net:8080/cgi-bin/koha/svc/ncip?service=lookup_item&itemid=383
+        fetch_marc_item($query, $bibid, $itemid);
+    } else {
+# query example: http://koha-server.net:8080/cgi-bin/koha/svc/ncip?service=lookup_item&itemid=383&getBiblioContext
+# another: http://koha-server.net:8080/cgi-bin/koha/svc/ncip?service=lookup_item&barcode=0098137&getBiblioContext
+        fetch_marc_biblio($query, $bibid);
+    }
+    exit 0;
+}
+
+sub processLookupUser {
+    my $query  = shift;
+    my $userid = $query->param('userId');
+    if ($userid eq '') {
+        print $query->header(
+            -type   => 'text/plain',
+            -status => '400 Bad Request'
+        );
+        print "Param userId is undefined..";
+        exit 0;
+    }
+
+    my $results;
+
+    $results->{'userInfo'} = C4::NCIP::LookupUser::lookupUser(
+        {   input  => $query,
+            userid => $userid
+        }
     );
+
+    if (scalar(@{$results->{'userInfo'}->{'patrons'}}) == 0) {
+        print $query->header(
+            -type   => 'text/plain',
+            -status => '404 Not Found'
+        );
+        print "User you were looking up was not found..";
+        exit 0;
+    }
+
+    if (defined $query->param('loanedItemsDesired')) {
+        $results->{'loanedItems'} = C4::NCIP::LookupUser::parseLoanedItems(
+            {   input  => $query,
+                userid => $userid,
+                offset => 0,
+                size   => -1
+            }
+        );
+    }
+    if (defined $query->param('requestedItemsDesired')) {
+        $results->{'requestedItems'}
+            = C4::NCIP::LookupUser::parseRequestedItems(
+            {   input  => $query,
+                userid => $userid,
+                offset => 0,
+                size   => -1,
+                branch => C4::Context->userenv->{'branch'}
+            }
+            );
+    }
+    if (defined $query->param('userFiscalAccountDesired')) {
+        $results->{'userFiscalAccount'}
+            = C4::NCIP::LookupUser::parseUserFiscalAccount(
+            {   input  => $query,
+                userid => $userid
+            }
+            );
+    }
+
+    print $query->header(-type => 'text/plain', -charset => 'utf-8',);
+    print to_json($results);
+    exit 0;
+}
+
+sub processRequestItem {
+    my $query  = shift;
+    my $userid = $query->param('userId');
+    if ($userid eq '') {
+        print $query->header(
+            -type   => 'text/plain',
+            -status => '400 Bad Request'
+        );
+        print "Param userId is undefined..";
+        exit 0;
+    }
+
+    my $bibid   = $query->param('bibid');
+    my $itemid  = $query->param('itemid');
+    my $barcode = $query->param('barcode');
+
+    if (defined $bibid and (defined $itemid or defined $barcode)) {
+        print $query->header(
+            -type   => 'text/plain',
+            -status => '400 Bad Request'
+        );
+        print
+            "Cannot process both bibid & itemid/barcode .. you have to choose only one";
+        exit 0;
+    }
+
+    my $itemLevelHold = 1;
+    if (not defined $itemid or not is_integer($itemid)) {
+
+        if (not defined $bibid) {
+            if (not defined $barcode or not is_integer($barcode)) {
+                print $query->header(
+                    -type   => 'text/plain',
+                    -status => '400 Bad Request'
+                );
+                print
+                    "Param itemid or barcode is/are undefined or is/are not number(s)..\n";
+                print "Neither param bibid is specified..";
+                exit 0;
+            } else {
+                $itemid = GetItemnumberFromBarcode($barcode);
+            }
+        } else {
+            $itemLevelHold = 0;
+        }
+    }
+    my $pickupLocation = $query->param('pickupLocation');
+
+    if ($itemLevelHold) {
+        my $iteminfo = C4::Items::GetItem($itemid, undef, 1)
+            ;    # Needed to determine whether itemId exits ..
+        if (not defined $iteminfo) {
+            print $query->header(
+                -type   => 'text/plain',
+                -status => '404 Not Found'
+            );
+            print "Item you want to request was not found..";
+            exit 0;
+        }
+        if ($pickupLocation == '') {
+            $pickupLocation = $iteminfo->{'holdingbranch'};
+        }
+        $bibid = $iteminfo->{'biblionumber'};
+    } else {
+        $pickupLocation = C4::Context->userenv->{'branch'};
+        my $biblio = GetBiblio($bibid);
+        if (not defined $biblio) {
+            print $query->header(
+                -type   => 'text/plain',
+                -status => '404 Not Found'
+            );
+            print "Record you want to request was not found..";
+            exit 0;
+        }
+    }
+
+    my $requestType = $query->param('requestType')
+        || 'Hold'
+        ; # RequestType specifies if user wants the book now or doesn't mind to get into queue
+
+    if (not $requestType =~ /^Loan$|^Hold$/i) {
+        print $query->header(
+            -type   => 'text/plain',
+            -status => '400 Bad Request'
+        );
+        print "Param requestType not found/recognized..";
+        exit 0;
+    }
+    # Process rank & whether user hasn't requested this item yet ..
+    my $reserves = GetReservesFromBiblionumber(
+        {biblionumber => $bibid, itemnumber => $itemid, all_dates => 1})
+        ;    # Get rank ..
+
+    foreach my $res (@$reserves) {
+        if ($res->{borrowernumber} eq $userid) {
+            print $query->header(
+                -type   => 'text/plain',
+                -status => '403 Forbidden'
+            );
+            print "User already has item requested";
+            exit 0;
+        }
+    }
+
+    my $rank = scalar(@$reserves);
+
+    if ($requestType =~ '/^Loan$/' and $rank != 0) {
+        print $query->header(
+            -type   => 'text/plain',
+            -status => '409 Conflict'
+        );
+        print "Loan not possible  .. holdqueuelength exists";
+        exit 0;
+    }
+
+    my $expirationdate = $query->param('pickupExpiryDate');
+    my $startdate      = $query->param('earliestDateNeeded');
+    my $notes          = $query->param('notes');
+
+    my $title = $query->param('title');
+
+    if ($itemLevelHold) {
+        C4::NCIP::RequestItem::placeHold($query, $bibid, $itemid, $userid,
+            $pickupLocation, $startdate, $title, $expirationdate, $notes,
+            ++$rank, undef);
+    } else {
+        C4::NCIP::RequestItem::placeHold($query, $bibid, undef, $userid,
+            $pickupLocation, $startdate, $title, $expirationdate, $notes,
+            ++$rank, 'Any');
+    }
+}
+
+sub processLookupRequest {
+
+    my $query     = shift;
+    my $requestId = $query->param('requestId');
+
+    my $results;
+    if (defined $requestId and is_integer($requestId)) {
+        $results = C4::Reserves::GetReserve($requestId);
+    } else {
+        my $userId = $query->param('userId');
+        my $itemId = $query->param('itemId');
+
+        if (defined $userId and defined $itemId) {
+
+            my $dbh = C4::Context->dbh;
+            my $sth;
+            $sth = $dbh->prepare("
+		SELECT *
+		FROM reserves
+		WHERE borrowernumber=?
+		AND itemnumber =?
+		ORDER BY reservedate
+		");
+            $sth->execute($userId, $itemId);
+
+            $results = ${$sth->fetchall_arrayref({})}[0]; # Will always be only one correct ..
+
+        } else {
+            print $query->header(
+                -type   => 'text/plain',
+                -status => '400 Bad Request'
+            );
+            print
+                'You have to specify \'requestId\' or both \'userId\' & \'itemId\'..';
+            exit 0;
+        }
+    }
+    print $query->header(-type => 'text/plain', -charset => 'utf-8',);
+    print to_json($results);
+
+    # two possibilities: Have either UserId & ItemId or RequestId ..
+    exit 0;
+}
+
+sub processRenewItem {
+
+    exit 0;
+}
+
+sub processCancelRequestItem {
+
     exit 0;
 }
 
