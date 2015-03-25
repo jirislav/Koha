@@ -22,20 +22,146 @@ package C4::NCIP::RequestItem;
 use Modern::Perl;
 
 use JSON qw(to_json);
-use C4::Biblio;
-use C4::Items;
-use C4::Output;
-use C4::Reserves;
-use C4::Circulation;
-use C4::Members;
 
-sub placeHold { # FIXME: I need to refactor :'(
+sub requestItem {
+    my $query  = shift;
+    my $userid = $query->param('userId');
+    if ($userid eq '') {
+        print $query->header(
+            -type   => 'text/plain',
+            -status => '400 Bad Request'
+        );
+        print "Param userId is undefined..";
+        exit 0;
+    }
+
+    my $bibid   = $query->param('bibid');
+    my $itemid  = $query->param('itemid');
+    my $barcode = $query->param('barcode');
+
+    if (defined $bibid and (defined $itemid or defined $barcode)) {
+        print $query->header(
+            -type   => 'text/plain',
+            -status => '400 Bad Request'
+        );
+        print
+            "Cannot process both bibid & itemid/barcode .. you have to choose only one";
+        exit 0;
+    }
+
+    my $itemLevelHold = 1;
+    if (not defined $itemid or not is_integer($itemid)) {
+
+        if (not defined $bibid) {
+            if (not defined $barcode or not is_integer($barcode)) {
+                print $query->header(
+                    -type   => 'text/plain',
+                    -status => '400 Bad Request'
+                );
+                print
+                    "Param itemid or barcode is/are undefined or is/are not number(s)..\n";
+                print "Neither param bibid is specified..";
+                exit 0;
+            } else {
+                $itemid = C4::Items::GetItemnumberFromBarcode($barcode);
+            }
+        } else {
+            $itemLevelHold = 0;
+        }
+    }
+    my $pickupLocation = $query->param('pickupLocation');
+
+    if ($itemLevelHold) {
+        my $iteminfo = C4::Items::GetItem($itemid, undef, 1)
+            ;    # Needed to determine whether itemId exits ..
+        if (not defined $iteminfo) {
+            print $query->header(
+                -type   => 'text/plain',
+                -status => '404 Not Found'
+            );
+            print "Item you want to request was not found..";
+            exit 0;
+        }
+        if ($pickupLocation == '') {
+            $pickupLocation = $iteminfo->{'holdingbranch'};
+        }
+        $bibid = $iteminfo->{'biblionumber'};
+    } else {
+        $pickupLocation = C4::Context->userenv->{'branch'};
+        my $biblio = C4::Biblio::GetBiblio($bibid);
+        if (not defined $biblio) {
+            print $query->header(
+                -type   => 'text/plain',
+                -status => '404 Not Found'
+            );
+            print "Record you want to request was not found..";
+            exit 0;
+        }
+    }
+
+    my $requestType = $query->param('requestType')
+        || 'Hold'
+        ; # RequestType specifies if user wants the book now or doesn't mind to get into queue
+
+    if (not $requestType =~ /^Loan$|^Hold$/i) {
+        print $query->header(
+            -type   => 'text/plain',
+            -status => '400 Bad Request'
+        );
+        print "Param requestType not found/recognized..";
+        exit 0;
+    }
+    # Process rank & whether user hasn't requested this item yet ..
+    my $reserves = C4::Reserves::GetReservesFromBiblionumber(
+        {biblionumber => $bibid, itemnumber => $itemid, all_dates => 1})
+        ;    # Get rank ..
+
+    foreach my $res (@$reserves) {
+        if ($res->{borrowernumber} eq $userid) {
+            print $query->header(
+                -type   => 'text/plain',
+                -status => '403 Forbidden'
+            );
+            print "User already has item requested";
+            exit 0;
+        }
+    }
+
+    my $rank = scalar(@$reserves);
+
+    if ($requestType =~ '/^Loan$/' and $rank != 0) {
+        print $query->header(
+            -type   => 'text/plain',
+            -status => '409 Conflict'
+        );
+        print "Loan not possible  .. holdqueuelength exists";
+        exit 0;
+    }
+
+    my $expirationdate = $query->param('pickupExpiryDate');
+    my $startdate      = $query->param('earliestDateNeeded');
+    my $notes          = $query->param('notes');
+
+    my $title = $query->param('title');
+
+    if ($itemLevelHold) {
+        placeHold($query, $bibid, $itemid, $userid,
+            $pickupLocation, $startdate, $title, $expirationdate, $notes,
+            ++$rank, undef);
+    } else {
+        placeHold($query, $bibid, undef, $userid,
+            $pickupLocation, $startdate, $title, $expirationdate, $notes,
+            ++$rank, 'Any');
+    }
+}
+
+sub placeHold {    # FIXME: I need to refactor :'(
     my ($input,  $biblionumber, $checkitem, $borrowernumber,
         $branch, $startdate,    $title,     $expirationdate,
         $notes,  $rankrequest,  $request
     ) = @_;
-    my @rank = $rankrequest;
-    my $borrower = GetMember('borrowernumber' => $borrowernumber);
+    my @rank     = $rankrequest;
+    my $borrower = C4::Members::GetMember('borrowernumber' => $borrowernumber);
     my @bibitems = '';
 
     my $multi_hold    = '';
@@ -58,7 +184,7 @@ sub placeHold { # FIXME: I need to refactor :'(
     if ($checkitem ne '') {
         $rank[0] = '0' unless C4::Context->preference('ReservesNeedReturns');
         my $item = $checkitem;
-        $item = GetItem($item);
+        $item = C4::Items::GetItem($item);
         if ($item->{'holdingbranch'} eq $branch) {
             $found = 'W'
                 unless C4::Context->preference('ReservesNeedReturns');
@@ -81,7 +207,7 @@ sub placeHold { # FIXME: I need to refactor :'(
             my $const;
 
             if ($checkitem ne '') {
-                my $item = GetItem($checkitem);
+                my $item = C4::Items::GetItem($checkitem);
                 if ($item->{'biblionumber'} ne $biblionumber) {
                     $biblionumber = $item->{'biblionumber'};
                 }
@@ -89,7 +215,7 @@ sub placeHold { # FIXME: I need to refactor :'(
 
             if ($multi_hold) {
                 my $bibinfo = $bibinfos{$biblionumber};
-                AddReserve(
+                C4::Reserves::AddReserve(
                     $branch,         $borrower->{'borrowernumber'},
                     $biblionumber,   'a',
                     [$biblionumber], $bibinfo->{rank},
@@ -100,7 +226,7 @@ sub placeHold { # FIXME: I need to refactor :'(
             } else {
                 if ($input->param('request') eq 'any') {
                     # place a request on 1st available
-                    AddReserve(
+                    C4::Reserves::AddReserve(
                         $branch,       $borrower->{'borrowernumber'},
                         $biblionumber, 'a',
                         \@realbi,      $rank[0],
@@ -109,7 +235,7 @@ sub placeHold { # FIXME: I need to refactor :'(
                         $checkitem,    $found
                     );
                 } elsif ($reqbib[0] ne '') {
-                    AddReserve(
+                    C4::Reserves::AddReserve(
                         $branch,       $borrower->{'borrowernumber'},
                         $biblionumber, 'o',
                         \@reqbib,      $rank[0],
@@ -118,7 +244,7 @@ sub placeHold { # FIXME: I need to refactor :'(
                         $checkitem,    $found
                     );
                 } else {
-                    AddReserve(
+                    C4::Reserves::AddReserve(
                         $branch,       $borrower->{'borrowernumber'},
                         $biblionumber, 'a',
                         \@realbi,      $rank[0],
@@ -131,7 +257,7 @@ sub placeHold { # FIXME: I need to refactor :'(
         }
 
         #Parse RequestId of the last requested item ..
-        my @reserves = GetReservesFromBiblionumber(
+        my @reserves = C4::Reserves::GetReservesFromBiblionumber(
             {   biblionumber => $biblionumber,
                 itemnumber   => $checkitem,
                 all_dates    => 1
@@ -165,6 +291,10 @@ sub placeHold { # FIXME: I need to refactor :'(
         print "User not found..";
     }
     exit 0;
+}
+
+sub is_integer {
+    defined $_[0] && $_[0] =~ /^[+-]?\d+$/;
 }
 
 1;

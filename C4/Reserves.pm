@@ -448,6 +448,32 @@ sub GetReservesFromBorrowernumber {
     my $data = $sth->fetchall_arrayref({});
     return @$data;
 }
+
+=head2 GetReserveFromBorrowernumberAndItemnumber
+
+    $reserve = GetReserveFromBorrowernumberAndItemnumber($borrowernumber, $itemnumber);
+
+Returns matching reserve of borrower on an item specified.
+
+=cut
+
+sub GetReserveFromBorrowernumberAndItemnumber {
+    my $borrowernumber = shift;
+    my %itemnumber = shift;
+    my $dbh    = C4::Context->dbh;
+    my $sth;
+    $sth = $dbh->prepare("
+                SELECT *
+                FROM reserves
+                WHERE borrowernumber=?
+                AND itemnumber =?
+                ");
+    $sth->execute($borrowernumber, %itemnumber);
+
+    return ${$sth->fetchall_arrayref({})}[0];
+
+}
+
 #-------------------------------------------------------------------------------------
 =head2 CanBookBeReserved
 
