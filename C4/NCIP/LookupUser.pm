@@ -19,8 +19,12 @@
 
 package C4::NCIP::LookupUser;
 
+use JSON qw(to_json);
+
 use Modern::Perl;
 use Koha::DateUtils;
+use C4::Utils::DataTables;
+use C4::Utils::DataTables::Members qw/search/;
 
 sub lookupUser {
     my $query  = shift;
@@ -42,7 +46,7 @@ sub lookupUser {
         }
     );
 
-    if (scalar(@{$results->{'userInfo'}->{'patrons'}}) == 0) {
+    unless ($results->{'userInfo'}) {
         print $query->header(
             -type   => 'text/plain',
             -status => '404 Not Found'
@@ -94,10 +98,10 @@ sub parseUserData {
         $dt_params{$_} =~ s/^dt_//;
     }
 
-    my $results;
+    my $result;
 
     # Perform the patrons search;
-    $results = C4::Utils::DataTables::Members::search(
+    $result = C4::Utils::DataTables::Members::search(
         {   searchmember     => $searchmember,
             firstletter      => '',
             categorycode     => '',
@@ -106,9 +110,9 @@ sub parseUserData {
             searchfieldstype => "borrowernumber",
             dt_params        => \%dt_params,
         }
-    ) unless $results;
+    );
 
-    return $results;
+    return ${$result->{patrons}}[0];
 }
 
 sub parseLoanedItems {
@@ -183,10 +187,12 @@ sub parseLoanedItems {
     my @checkouts_previous;
     while (my $c = $sth->fetchrow_hashref()) {
         my ($charge)
-            = C4::Circulation::GetIssuingCharges($c->{itemnumber}, $c->{borrowernumber});
+            = C4::Circulation::GetIssuingCharges($c->{itemnumber},
+            $c->{borrowernumber});
 
         my ($can_renew, $can_renew_error)
-            = C4::Circulation::CanBookBeRenewed($c->{borrowernumber}, $c->{itemnumber});
+            = C4::Circulation::CanBookBeRenewed($c->{borrowernumber},
+            $c->{itemnumber});
         my $can_renew_date
             = $can_renew_error && $can_renew_error eq 'too_soon'
             ? output_pref(
@@ -199,7 +205,8 @@ sub parseLoanedItems {
             : undef;
 
         my ($renewals_count, $renewals_allowed, $renewals_remaining)
-            = C4::Circulation::GetRenewCount($c->{borrowernumber}, $c->{itemnumber});
+            = C4::Circulation::GetRenewCount($c->{borrowernumber},
+            $c->{itemnumber});
 
         my $checkout = {
             DT_RowId => $c->{itemnumber} . '-' . $c->{borrowernumber},
@@ -276,13 +283,7 @@ sub parseLoanedItems {
 
     my @checkouts = (@checkouts_today, @checkouts_previous);
 
-    my $data;
-    $data->{'iTotalRecords'}        = scalar @checkouts;
-    $data->{'iTotalDisplayRecords'} = scalar @checkouts;
-    $data->{'sEcho'}                = $input->param('sEcho') || undef;
-    $data->{'aaData'}               = \@checkouts;
-    return $data;
-
+    return \@checkouts;
 }
 
 sub parseRequestedItems {
@@ -362,7 +363,8 @@ sub parseRequestedItems {
                 $hold->{transferred} = 1;
                 $hold->{date_sent}
                     = output_pref(dt_from_string($transferred_when));
-                $hold->{from_branch} = C4::Branch::GetBranchName($transferred_from);
+                $hold->{from_branch}
+                    = C4::Branch::GetBranchName($transferred_from);
             } elsif ($item->holdingbranch()->branchcode() ne
                 $h->branchcode()->branchcode())
             {
@@ -374,12 +376,7 @@ sub parseRequestedItems {
 
         push(@holds, $hold);
     }
-    my $data;
-    $data->{'iTotalRecords'}        = scalar @holds;
-    $data->{'iTotalDisplayRecords'} = scalar @holds;
-    $data->{'sEcho'}                = $input->param('sEcho') || undef;
-    $data->{'aaData'}               = \@holds;
-    return $data;
+    return \@holds;
 }
 
 sub parseUserFiscalAccount {

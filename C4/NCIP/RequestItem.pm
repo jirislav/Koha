@@ -140,7 +140,7 @@ sub requestItem {
 
     my $expirationdate = $query->param('pickupExpiryDate');
     my $startdate      = $query->param('earliestDateNeeded');
-    my $notes          = $query->param('notes');
+    my $notes          = $query->param('notes') || 'Placed by svc/ncip';
 
     my $title = $query->param('title');
 
@@ -151,132 +151,66 @@ sub requestItem {
     } else {
         placeHold($query, $bibid, undef, $userid,
             $pickupLocation, $startdate, $title, $expirationdate, $notes,
-            ++$rank, 'Any');
+            ++$rank, 'any');
     }
 }
 
-sub placeHold {    # FIXME: I need to refactor :'(
+sub placeHold {
     my ($input,  $biblionumber, $checkitem, $borrowernumber,
         $branch, $startdate,    $title,     $expirationdate,
-        $notes,  $rankrequest,  $request
+        $notes,  $rank,         $request
     ) = @_;
-    my @rank     = $rankrequest;
-    my $borrower = C4::Members::GetMember('borrowernumber' => $borrowernumber);
-    my @bibitems = '';
-
-    my $multi_hold    = '';
-    my $biblionumbers = $biblionumber . '/';
-    my $bad_bibs      = '';
-    my @reqbib        = '';
-    my %bibinfos      = ();
-    my @biblionumbers = split '/', $biblionumbers;
-    foreach my $bibnum (@biblionumbers) {
-        my %bibinfo = ();
-        $bibinfo{title}    = $input->param("title_$bibnum");
-        $bibinfo{rank}     = $input->param("rank_$bibnum");
-        $bibinfos{$bibnum} = \%bibinfo;
-    }
+    my $borrower
+        = C4::Members::GetMember('borrowernumber' => $borrowernumber);
 
     my $found;
 
-# if we have an item selectionned, and the pickup branch is the same as the holdingbranch
-# of the document, we force the value $rank and $found .
-    if ($checkitem ne '') {
-        $rank[0] = '0' unless C4::Context->preference('ReservesNeedReturns');
-        my $item = $checkitem;
-        $item = C4::Items::GetItem($item);
-        if ($item->{'holdingbranch'} eq $branch) {
-            $found = 'W'
-                unless C4::Context->preference('ReservesNeedReturns');
+    if (defined $checkitem) {
+        my $item = C4::Items::GetItem($checkitem);
+
+        unless (C4::Context->preference('ReservesNeedReturns')) {
+            $rank = '0';
+            $found = 'W' if $item->{'holdingbranch'} eq $branch;
         }
+        $biblionumber = $item->{'biblionumber'};
     }
     if ($borrower) {
-        foreach my $biblionumber (keys %bibinfos) {
-            my $count = @bibitems;
-            @bibitems = sort @bibitems;
-            my $i2 = 1;
-            my @realbi;
-            $realbi[0] = $bibitems[0];
-            for (my $i = 1; $i < $count; $i++) {
-                my $i3 = $i2 - 1;
-                if ($realbi[$i3] ne $bibitems[$i]) {
-                    $realbi[$i2] = $bibitems[$i];
-                    $i2++;
-                }
-            }
-            my $const;
-
-            if ($checkitem ne '') {
-                my $item = C4::Items::GetItem($checkitem);
-                if ($item->{'biblionumber'} ne $biblionumber) {
-                    $biblionumber = $item->{'biblionumber'};
-                }
-            }
-
-            if ($multi_hold) {
-                my $bibinfo = $bibinfos{$biblionumber};
-                C4::Reserves::AddReserve(
-                    $branch,         $borrower->{'borrowernumber'},
-                    $biblionumber,   'a',
-                    [$biblionumber], $bibinfo->{rank},
-                    $startdate,      $expirationdate,
-                    $notes,          $bibinfo->{title},
-                    $checkitem,      $found
-                );
-            } else {
-                if ($input->param('request') eq 'any') {
-                    # place a request on 1st available
-                    C4::Reserves::AddReserve(
-                        $branch,       $borrower->{'borrowernumber'},
-                        $biblionumber, 'a',
-                        \@realbi,      $rank[0],
-                        $startdate,    $expirationdate,
-                        $notes,        $title,
-                        $checkitem,    $found
-                    );
-                } elsif ($reqbib[0] ne '') {
-                    C4::Reserves::AddReserve(
-                        $branch,       $borrower->{'borrowernumber'},
-                        $biblionumber, 'o',
-                        \@reqbib,      $rank[0],
-                        $startdate,    $expirationdate,
-                        $notes,        $title,
-                        $checkitem,    $found
-                    );
-                } else {
-                    C4::Reserves::AddReserve(
-                        $branch,       $borrower->{'borrowernumber'},
-                        $biblionumber, 'a',
-                        \@realbi,      $rank[0],
-                        $startdate,    $expirationdate,
-                        $notes,        $title,
-                        $checkitem,    $found
-                    );
-                }
-            }
-        }
-
-        #Parse RequestId of the last requested item ..
-        my @reserves = C4::Reserves::GetReservesFromBiblionumber(
-            {   biblionumber => $biblionumber,
-                itemnumber   => $checkitem,
-                all_dates    => 1
-            }
+        my $reserveId = C4::Reserves::AddReserve(
+            $branch,       $borrower->{'borrowernumber'},
+            $biblionumber, 'a',
+            undef,         $rank,
+            $startdate,    $expirationdate,
+            $notes,        $title,
+            $checkitem,    $found
         );
 
-        my $lastReserve = $reserves[-1][-1];
-
         my $results;
-        if (    defined $lastReserve
-            and $lastReserve->{'priority'} eq $rankrequest
-            and $lastReserve->{'borrowernumber'} eq $borrowernumber)
-        {
-            $results->{'status'}    = 'ok';
-            $results->{'requestId'} = $lastReserve->{'reserve_id'};
+
+	# AddReserve currently doesn't return reserveId hence it's needed to parse it manually ..
+        unless ($reserveId) {
+            #Parse RequestId of the last requested item ..
+            my @reserves = C4::Reserves::GetReservesFromBiblionumber(
+                {   biblionumber => $biblionumber,
+                    itemnumber   => $checkitem,
+                    all_dates    => 1
+                }
+            );
+
+            my $lastReserve = $reserves[-1][-1];
+
+            if (    $lastReserve
+                and $lastReserve->{'borrowernumber'} eq $borrowernumber)
+            {
+                $results->{'status'}    = 'ok';
+                $results->{'requestId'} = $lastReserve->{'reserve_id'};
+            } else {
+                $results->{'status'} = 'failed';
+            }
+
         } else {
-            $results->{'status'} = 'failed';
+            $results->{'status'}    = 'ok-verywell :))';
+            $results->{'requestId'} = $reserveId;
         }
-        #	$results->{'reserves'} = $reserves[-1];
 
         print $input->header(
             -type    => 'text/plain',
