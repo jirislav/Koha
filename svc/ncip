@@ -26,6 +26,7 @@ use CGI qw ( -utf8 );
 use C4::Auth qw/check_api_auth/;
 
 use C4::NCIP::LookupItem qw/lookupItem/;
+use C4::NCIP::LookupItemSet qw/lookupItemSet/;
 use C4::NCIP::LookupUser qw/lookupUser/;
 use C4::NCIP::LookupRequest qw/lookupRequest/;
 use C4::NCIP::RequestItem qw/requestItem/;
@@ -58,6 +59,8 @@ if ($query->request_method eq "GET") {
 
     if ($service eq 'lookup_item') {
         C4::NCIP::LookupItem::lookupItem($query);
+    } elsif ($service eq 'lookup_item_set') {
+        C4::NCIP::LookupItemSet::lookupItemSet($query);
     } elsif ($service eq 'lookup_user') {
         C4::NCIP::LookupUser::lookupUser($query);
     } elsif ($service eq 'lookup_request') {
