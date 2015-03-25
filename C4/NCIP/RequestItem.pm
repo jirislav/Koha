@@ -23,10 +23,10 @@ use Modern::Perl;
 
 use JSON qw(to_json);
 
-sub requestItem {
+sub requestItem {# FIXME: Ask Koha is Book/Item CanBeReserved !! 
     my $query  = shift;
-    my $userid = $query->param('userId');
-    if ($userid eq '') {
+    my $userId = $query->param('userId');
+    if ($userId eq '') {
         print $query->header(
             -type   => 'text/plain',
             -status => '400 Bad Request'
@@ -35,35 +35,35 @@ sub requestItem {
         exit 0;
     }
 
-    my $bibid   = $query->param('bibid');
-    my $itemid  = $query->param('itemid');
+    my $bibId   = $query->param('bibId');
+    my $itemId  = $query->param('itemId');
     my $barcode = $query->param('barcode');
 
-    if (defined $bibid and (defined $itemid or defined $barcode)) {
+    if (defined $bibId and (defined $itemId or defined $barcode)) {
         print $query->header(
             -type   => 'text/plain',
             -status => '400 Bad Request'
         );
         print
-            "Cannot process both bibid & itemid/barcode .. you have to choose only one";
+            "Cannot process both bibId & itemId/barcode .. you have to choose only one";
         exit 0;
     }
 
     my $itemLevelHold = 1;
-    if (not defined $itemid or not is_integer($itemid)) {
+    if (not defined $itemId or not is_integer($itemId)) {
 
-        if (not defined $bibid) {
+        if (not defined $bibId) {
             if (not defined $barcode or not is_integer($barcode)) {
                 print $query->header(
                     -type   => 'text/plain',
                     -status => '400 Bad Request'
                 );
                 print
-                    "Param itemid or barcode is/are undefined or is/are not number(s)..\n";
-                print "Neither param bibid is specified..";
+                    "Param itemId or barcode is/are undefined or is/are not number(s)..\n";
+                print "Neither param bibId is specified..";
                 exit 0;
             } else {
-                $itemid = C4::Items::GetItemnumberFromBarcode($barcode);
+                $itemId = C4::Items::GetItemnumberFromBarcode($barcode);
             }
         } else {
             $itemLevelHold = 0;
@@ -72,7 +72,7 @@ sub requestItem {
     my $pickupLocation = $query->param('pickupLocation');
 
     if ($itemLevelHold) {
-        my $iteminfo = C4::Items::GetItem($itemid, undef, 1)
+        my $iteminfo = C4::Items::GetItem($itemId, undef, 1)
             ;    # Needed to determine whether itemId exits ..
         if (not defined $iteminfo) {
             print $query->header(
@@ -85,10 +85,10 @@ sub requestItem {
         if ($pickupLocation == '') {
             $pickupLocation = $iteminfo->{'holdingbranch'};
         }
-        $bibid = $iteminfo->{'biblionumber'};
+        $bibId = $iteminfo->{'biblionumber'};
     } else {
         $pickupLocation = C4::Context->userenv->{'branch'};
-        my $biblio = C4::Biblio::GetBiblio($bibid);
+        my $biblio = C4::Biblio::GetBiblio($bibId);
         if (not defined $biblio) {
             print $query->header(
                 -type   => 'text/plain',
@@ -113,11 +113,11 @@ sub requestItem {
     }
     # Process rank & whether user hasn't requested this item yet ..
     my $reserves = C4::Reserves::GetReservesFromBiblionumber(
-        {biblionumber => $bibid, itemnumber => $itemid, all_dates => 1})
+        {biblionumber => $bibId, itemnumber => $itemId, all_dates => 1})
         ;    # Get rank ..
 
     foreach my $res (@$reserves) {
-        if ($res->{borrowernumber} eq $userid) {
+        if ($res->{borrowernumber} eq $userId) {
             print $query->header(
                 -type   => 'text/plain',
                 -status => '403 Forbidden'
@@ -142,15 +142,13 @@ sub requestItem {
     my $startdate      = $query->param('earliestDateNeeded');
     my $notes          = $query->param('notes') || 'Placed by svc/ncip';
 
-    my $title = $query->param('title');
-
     if ($itemLevelHold) {
-        placeHold($query, $bibid, $itemid, $userid,
-            $pickupLocation, $startdate, $title, $expirationdate, $notes,
+        placeHold($query, $bibId, $itemId, $userId,
+            $pickupLocation, $startdate, undef, $expirationdate, $notes,
             ++$rank, undef);
     } else {
-        placeHold($query, $bibid, undef, $userid,
-            $pickupLocation, $startdate, $title, $expirationdate, $notes,
+        placeHold($query, $bibId, undef, $userId,
+            $pickupLocation, $startdate, undef, $expirationdate, $notes,
             ++$rank, 'any');
     }
 }

@@ -28,8 +28,8 @@ use C4::Utils::DataTables::Members qw/search/;
 
 sub lookupUser {
     my $query  = shift;
-    my $userid = $query->param('userId');
-    if ($userid eq '') {
+    my $userId = $query->param('userId');
+    if ($userId eq '') {
         print $query->header(
             -type   => 'text/plain',
             -status => '400 Bad Request'
@@ -42,7 +42,7 @@ sub lookupUser {
 
     $results->{'userInfo'} = parseUserData(
         {   input  => $query,
-            userid => $userid
+            userId => $userId
         }
     );
 
@@ -58,7 +58,7 @@ sub lookupUser {
     if (defined $query->param('loanedItemsDesired')) {
         $results->{'loanedItems'} = parseLoanedItems(
             {   input  => $query,
-                userid => $userid,
+                userId => $userId,
                 offset => 0,
                 size   => -1
             }
@@ -67,7 +67,7 @@ sub lookupUser {
     if (defined $query->param('requestedItemsDesired')) {
         $results->{'requestedItems'} = parseRequestedItems(
             {   input  => $query,
-                userid => $userid,
+                userId => $userId,
                 offset => 0,
                 size   => -1,
                 branch => C4::Context->userenv->{'branch'}
@@ -77,7 +77,7 @@ sub lookupUser {
     if (defined $query->param('userFiscalAccountDesired')) {
         $results->{'userFiscalAccount'} = parseUserFiscalAccount(
             {   input  => $query,
-                userid => $userid
+                userId => $userId
             }
         );
     }
@@ -91,7 +91,7 @@ sub parseUserData {
     my ($params) = @_;
     my $cgiInput = $params->{input};
 
-    my $searchmember = $params->{userid};
+    my $searchmember = $params->{userId};
 
     my %dt_params = C4::Utils::DataTables::dt_get_params($cgiInput);
     foreach (grep {$_ =~ /^mDataProp/} keys %dt_params) {
@@ -119,7 +119,7 @@ sub parseLoanedItems {
     my ($params) = @_;
     my $input = $params->{input};
 
-    my @borrowernumber   = $params->{'userid'};
+    my @borrowernumber   = $params->{'userId'};
     my $offset           = $params->{'offset'};
     my $results_per_page = $params->{'size'} || -1;
 
@@ -291,7 +291,7 @@ sub parseRequestedItems {
     my $input = $params->{input};
 
     my $branch           = $params->{branch};
-    my $borrowernumber   = $params->{userid};
+    my $borrowernumber   = $params->{userId};
     my $offset           = $params->{offset};
     my $results_per_page = $params->{size} || -1;
 
@@ -383,7 +383,7 @@ sub parseUserFiscalAccount {
     my ($params) = @_;
     my $input = $params->{input};
 
-    my $borrowernumber   = $params->{'userid'};
+    my $borrowernumber   = $params->{'userId'};
     my $offset           = $params->{'offset'};
     my $results_per_page = $params->{'size'} || -1;
 

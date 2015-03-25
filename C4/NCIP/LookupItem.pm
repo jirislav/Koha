@@ -25,30 +25,25 @@ use JSON qw(to_json);
 
 sub lookupItem {
     my $query = shift;
-    my $bibid = $query->param('bibid');
-    if (defined $bibid) {
-        fetch_marc_biblio($query, $bibid);
-        exit 0;
-    }
 
-    my $itemid  = $query->param('itemid');
+    my $itemId  = $query->param('itemId');
     my $barcode = $query->param('barcode');
 
-    unless (defined $itemid) {
+    unless (defined $itemId) {
         unless (defined $barcode) {
             print $query->header(
                 -type   => 'text/plain',
                 -status => '400 Bad Request'
             );
             print
-                "Param itemid & barcode is undefined..\n Specify at least one of these";
+                "Param itemId & barcode is undefined..\n Specify at least one of these";
             exit 0;
         } else {
-            $itemid = C4::Items::GetItemnumberFromBarcode($barcode);
+            $itemId = C4::Items::GetItemnumberFromBarcode($barcode);
         }
     }
 
-    my $iteminfo = C4::Items::GetItem($itemid, undef, 1);
+    my $iteminfo = C4::Items::GetItem($itemId, $barcode, undef);
     if (not defined $iteminfo) {
         print $query->header(
             -type   => 'text/plain',
@@ -58,16 +53,17 @@ sub lookupItem {
         exit 0;
     }
 
-    my $bibid = $iteminfo->{'biblioitemnumber'};
+    my $bibId = $iteminfo->{'biblioitemnumber'};
+
+    my $result;
 
     if (   defined $query->param('holdQueueLengthDesired')
         or defined $query->param('circulationStatusDesired'))
     {
 
-        my $result;
         my $holds = C4::Reserves::GetReservesFromBiblionumber(
-            {   biblionumber => $bibid,
-                itemnumber   => $itemid,
+            {   biblionumber => $bibId,
+                itemnumber   => $itemId,
                 all_dates    => 1
             }
         );
@@ -75,61 +71,74 @@ sub lookupItem {
             $result->{'holdQueueLength'} = scalar(@$holds);
         }
         if (defined $query->param('circulationStatusDesired')) {
-            if (scalar(@$holds) == 0)
-            {    # FIXME this is wrong .. doesnt check number of holds ..
-                $result->{'circulationStatus'}
-                    = parse_circulation_status($iteminfo);
-            } else {
-                $result->{'circulationStatus'} = 'On Loan';
-            }
+            $result->{'circulationStatus'}
+                = scalar(@$holds) == 0
+                ? parseCirculationStatus($iteminfo)
+                : 'On Loan';
         }
         if (defined $query->param('itemUseRestrictionTypeDesired')) {
-            #TODO: Parse item's restrictions ..
+            my $restrictions = parseItemUseRestrictions($iteminfo);
+            unless (scalar @{$restrictions} == 0) {
+                $result->{'itemUseRestrictions'} = $restrictions;
+            }
         }
-        print $query->header(-type => 'text/plain', -charset => 'utf-8',);
-        print to_json($result);
-    } elsif (not defined $query->param('getBiblioContext')) {
-        fetch_marc_item($query, $bibid, $itemid);
-    } else {
-        fetch_marc_biblio($query, $bibid);
     }
+    $result->{'item'} = parseItem($bibId, $itemId, $iteminfo);
+    print $query->header(-type => 'text/plain', -charset => 'utf-8',);
+    print to_json($result);
     exit 0;
 }
 
-sub fetch_marc_biblio {
-    my $query  = shift;
-    my $bibid  = shift;
-    my $record = C4::Biblio::GetMarcBiblio($bibid, 1);
-    if (defined $record) {
-        print $query->header(-type => 'text/xml', -charset => 'utf-8',);
-        print $record->as_xml_record();
-    } else {
-        print $query->header(
-            -type   => 'text/plain',
-            -status => '404 Not Found'
-        );
-        print "Item you are looking for was not found..";
+sub parseItem {
+    my $bibId  = shift;
+    my $itemId = shift;
+    my $item   = shift;
+    my $result;
+
+    $result->{itemId}           = $itemId;
+    $result->{bibId}            = $bibId;
+    $result->{barcode}          = $item->{barcode};
+    $result->{location}         = $item->{location};
+    $result->{agencyid}         = $item->{homebranch};
+    $result->{mediumtype}       = $item->{itype};
+    $result->{copynumber}       = $item->{copynumber};
+    $result->{callnumber}       = $item->{itemcallnumber};
+    $result->{biblioitemnumber} = $item->{biblioitemnumber};
+    my $dbh = C4::Context->dbh;
+    my $sth = $dbh->prepare("
+        SELECT biblioitems.volume,
+                biblioitems.number,
+                biblioitems.isbn,
+                biblioitems.issn,
+                biblioitems.publicationyear,
+                biblioitems.publishercode,
+                biblioitems.pages,
+                biblioitems.size,
+                biblioitems.place,
+                biblioitems.agerestriction,
+                biblio.author,
+                biblio.title,
+                biblio.unititle,
+                biblio.notes,
+                biblio.serial
+        FROM biblioitems
+        LEFT JOIN biblio ON biblio.biblionumber = biblioitems.biblionumber
+        WHERE biblioitems.biblionumber = ?");
+    $sth->execute($bibId);
+    my $data = clearEmptyKeys($sth->fetchrow_hashref);
+
+    return 'SQL query failed' unless $data;
+
+    foreach my $key (keys $data) {
+        $result->{$key} = $data->{$key};
     }
+
+    $result = clearEmptyKeys($result);
+
+    return $result || 'failed';
 }
 
-sub fetch_marc_item {
-    my $query  = shift;
-    my $bibid  = shift;
-    my $itemid = shift;
-    my $record = C4::Items::GetMarcItem($bibid, $itemid);
-    if (defined $record) {
-        print $query->header(-type => 'text/xml', -charset => 'utf-8',);
-        print $record->as_xml_record();
-    } else {
-        print $query->header(
-            -type   => 'text/plain',
-            -status => '404 Not Found'
-        );
-        print "Item you are looking for was not found..";
-    }
-}
-
-sub parse_circulation_status {
+sub parseCirculationStatus {
     my $item = shift;
     if ($item->{datedue} or $item->{onloan}) {
         return 'On Loan';
@@ -137,8 +146,7 @@ sub parse_circulation_status {
     if ($item->{transfertwhen}) {
         return 'In Transit Between Library Locations';
     }
-    if (   $item->{itemnotforloan}
-        or $item->{notforloan_per_itemtype}
+    if (   $item->{notforloan_per_itemtype}
         or $item->{itemlost}
         or $item->{withdrawn}
         or $item->{damaged})
@@ -147,6 +155,28 @@ sub parse_circulation_status {
     }
 
     return 'Available On Shelf';
+}
+
+sub parseItemUseRestrictions {
+# Possible standardized values can be found here:
+# https://code.google.com/p/xcncip2toolkit/source/browse/core/trunk/service/src/main/java/org/extensiblecatalog/ncip/v2/service/Version1ItemUseRestrictionType.java
+
+    my $item = shift;
+    my @toReturn;
+    my $i = 0;
+    if ($item->{notforloan}) {
+        $toReturn[$i++] = 'In Library Use Only';
+    }
+    return \@toReturn;
+}
+
+sub clearEmptyKeys {
+    my $hashref = shift;
+
+    foreach my $key (keys $hashref) {
+        delete $hashref->{$key} unless defined $hashref->{$key};
+    }
+    return $hashref;
 }
 
 1;
