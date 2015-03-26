@@ -21,10 +21,8 @@ package C4::NCIP::LookupRequest;
 
 use Modern::Perl;
 
-use JSON qw(to_json);
-
 sub lookupRequest {
-    my $query     = shift;
+    my ($query) = @_;
     my $requestId = $query->param('requestId');
 
     my $result;
@@ -34,30 +32,20 @@ sub lookupRequest {
         my $userId = $query->param('userId');
         my $itemId = $query->param('itemId');
 
-        if (defined $userId and defined $itemId) {
-            $result = C4::Reserves::GetReserveFromBorrowernumberAndItemnumber(
-                $userId, $itemId);
-        } else {
-            print $query->header(
-                -type   => 'text/plain',
-                -status => '400 Bad Request'
-            );
-            print
-                'You have to specify \'requestId\' or both \'userId\' & \'itemId\'..';
-            exit 0;
-        }
-    }
-    if (not defined $result) {
-        print $query->header(
-            -type   => 'text/plain',
-            -status => '404 Not Found'
-        );
-        print "Request not found..";
-        exit 0;
-    }
-    print $query->header(-type => 'text/plain', -charset => 'utf-8',);
-    print to_json($result);
+        C4::NCIP::NcipUtils::print400($query,
+            'You have to specify \'requestId\' or both \'userId\' & \'itemId\'..'
+        ) unless (defined $userId and defined $itemId);
 
-    exit 0;
+        $result
+            = C4::Reserves::GetReserveFromBorrowernumberAndItemnumber($userId,
+            $itemId);
+    }
+
+    C4::NCIP::NcipUtils::print404($query, "Request not found..")
+        unless $result;
+
+    C4::NCIP::NcipUtils::clearEmptyKeys($result);
+
+    C4::NCIP::NcipUtils::printJson($query, $result);
 }
 1;

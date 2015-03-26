@@ -104,6 +104,7 @@ BEGIN {
         &GetReservesForBranch
         &GetReservesToBranch
         &GetReserveCount
+        &GetReserveCountFromItemnumber
         &GetReserveFee
         &GetReserveInfo
         &GetReserveStatus
@@ -459,8 +460,7 @@ Returns matching reserve of borrower on an item specified.
 =cut
 
 sub GetReserveFromBorrowernumberAndItemnumber {
-    my $borrowernumber = shift;
-    my $itemnumber = shift;
+    my ($borrowernumber, $itemnumber) = @_;
     my $dbh    = C4::Context->dbh;
     my $sth;
     $sth = $dbh->prepare("
@@ -664,6 +664,30 @@ sub GetReserveCount {
     $sth->execute($borrowernumber);
     my $row = $sth->fetchrow_hashref;
     return $row->{counter};
+}
+
+=head2 GetReserveCountFromItemnumber
+
+  $number = &GetReserveCountFromItemnumber($itemnumber);
+
+this function returns the number of reservation for an itemnumber given on input arg.
+
+=cut
+
+
+sub GetReserveCountFromItemnumber {
+    my ($itemnumber) = @_;
+
+    my $dbh = C4::Context->dbh;
+
+    my $sth = $dbh->prepare("
+        SELECT COUNT(*) AS counter
+        FROM reserves
+        WHERE itemnumber = ?");
+
+    $sth->execute($itemnumber);
+
+    return $sth->fetchrow_hashref->{counter};
 }
 
 =head2 GetOtherReserves

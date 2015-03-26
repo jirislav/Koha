@@ -20,61 +20,45 @@
 package C4::NCIP::LookupItem;
 
 use Modern::Perl;
-
-use JSON qw(to_json);
 use C4::NCIP::NcipUtils;
 
 sub lookupItem {
-    my $query = shift;
+    my ($query) = @_;
 
     my $itemId  = $query->param('itemId');
     my $barcode = $query->param('barcode');
 
     unless (defined $itemId) {
-        unless (defined $barcode) {
-            print $query->header(
-                -type   => 'text/plain',
-                -status => '400 Bad Request'
-            );
-            print
-                "Param itemId & barcode is undefined..\n Specify at least one of these";
-            exit 0;
-        } else {
-            $itemId = C4::Items::GetItemnumberFromBarcode($barcode);
-        }
+        C4::NCIP::NcipUtils::print400($query,
+            "itemId nor barcode is specified..\n")
+            unless $barcode;
+
+        $itemId = C4::Items::GetItemnumberFromBarcode($barcode);
     }
 
     my $iteminfo = C4::Items::GetItem($itemId, $barcode, undef);
-    if (not defined $iteminfo) {
-        print $query->header(
-            -type   => 'text/plain',
-            -status => '404 Not Found'
-        );
-        print "Item you are looking for was not found..";
-        exit 0;
-    }
+
+    C4::NCIP::NcipUtils::print404($query, "Item not found..")
+        unless $iteminfo;
 
     my $bibId = $iteminfo->{'biblioitemnumber'};
 
     my $result;
-
+    my $desiredSomething = 0;
     if (   defined $query->param('holdQueueLengthDesired')
         or defined $query->param('circulationStatusDesired'))
     {
+        $desiredSomething = 1;
 
-        my $holds = C4::Reserves::GetReservesFromBiblionumber(
-            {   biblionumber => $bibId,
-                itemnumber   => $itemId,
-                all_dates    => 1
-            }
-        );
+        my $holds = C4::Reserves::GetReserveCountFromItemnumber($itemId);
+
         if (defined $query->param('holdQueueLengthDesired')) {
-            $result->{'holdQueueLength'} = scalar(@$holds);
+            $result->{'holdQueueLength'} = $holds;
         }
         if (defined $query->param('circulationStatusDesired')) {
             $result->{'circulationStatus'}
                 = C4::NCIP::NcipUtils::parseCirculationStatus($iteminfo,
-                scalar @$holds);
+                $holds);
         }
     }
     if (defined $query->param('itemUseRestrictionTypeDesired')) {
@@ -83,32 +67,18 @@ sub lookupItem {
         unless (scalar @{$restrictions} == 0) {
             $result->{'itemUseRestrictions'} = $restrictions;
         }
+        $desiredSomething = 1;
     }
 
-    $result->{'item'} = parseItem($bibId, $itemId, $iteminfo);
-    print $query->header(-type => 'text/plain', -charset => 'utf-8',);
-    print to_json($result);
-    exit 0;
+    $result->{'itemInfo'} = parseItem($bibId, $itemId, $iteminfo)
+        unless $desiredSomething and defined $query->param('notItemInfo');
+
+    C4::NCIP::NcipUtils::printJson($query, $result);
 }
 
 sub parseItem {
-    my $bibId  = shift;
-    my $itemId = shift;
-    my $item   = shift;
-    my $result;
+    my ($bibId, $itemId, $item) = @_;
 
-    $result->{itemId}           = $itemId;
-    $result->{bibId}            = $bibId;
-    $result->{barcode}          = $item->{barcode};
-    $result->{location}         = $item->{location};
-    $result->{homebranch}       = $item->{homebranch};
-    $result->{restricted}       = $item->{restricted};
-    $result->{holdingbranch}    = $item->{holdingbranch};
-    $result->{mediumtype}       = $item->{itype};
-    $result->{copynumber}       = $item->{copynumber};
-    $result->{callnumber}       = $item->{itemcallnumber};
-    $result->{ccode}            = $item->{ccode};
-    $result->{biblioitemnumber} = $item->{biblioitemnumber};
     my $dbh = C4::Context->dbh;
     my $sth = $dbh->prepare("
         SELECT biblioitems.volume,
@@ -130,17 +100,23 @@ sub parseItem {
         LEFT JOIN biblio ON biblio.biblionumber = biblioitems.biblionumber
         WHERE biblioitems.biblionumber = ?");
     $sth->execute($bibId);
-    my $data = $sth->fetchrow_hashref;
+    my $result = $sth->fetchrow_hashref;
 
-    return 'SQL query failed' unless $data;
+    return 'SQL query failed' unless $result;
 
-    foreach my $key (keys $data) {
-        $result->{$key} = $data->{$key};
-    }
+    $result->{itemId}        = $itemId;
+    $result->{bibId}         = $bibId;
+    $result->{barcode}       = $item->{barcode};
+    $result->{location}      = $item->{location};
+    $result->{homebranch}    = $item->{homebranch};
+    $result->{restricted}    = $item->{restricted};
+    $result->{holdingbranch} = $item->{holdingbranch};
+    $result->{mediumtype}    = $item->{itype};
+    $result->{copynumber}    = $item->{copynumber};
+    $result->{callnumber}    = $item->{itemcallnumber};
+    $result->{ccode}         = $item->{ccode};
 
-    $result = C4::NCIP::NcipUtils::clearEmptyKeys($result);
-
-    return $result || 'failed';
+    return C4::NCIP::NcipUtils::clearEmptyKeys($result);
 }
 
 1;

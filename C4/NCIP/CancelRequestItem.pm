@@ -20,64 +20,41 @@
 package C4::NCIP::CancelRequestItem;
 
 use Modern::Perl;
-use JSON qw(to_json);
 
 sub cancelRequestItem {
-    my $query     = shift;
+    my ($query)   = @_;
     my $userId    = $query->param('userId');
     my $itemId    = $query->param('itemId');
     my $requestId = $query->param('requestId');
-    my $result;
+    my ($result, $reserve);
     if (defined $userId and defined $itemId) {
-        my $reserve
+        $reserve
             = C4::Reserves::GetReserveFromBorrowernumberAndItemnumber($userId,
             $itemId);
-        if ($reserve) {
-            C4::Reserves::CancelReserve($reserve);
-            $result->{'status'} = 'ok';
-        } else {
-            print $query->header(
-                -type   => 'text/plain',
-                -status => '404 Not Found'
-            );
-            print "Request not found..";
-            exit 0;
-        }
-    } elsif (defined $userId and defined $requestId) {
-        my $reserve = C4::Reserves::GetReserve($requestId);
-        if ($reserve) {
-            if ($reserve->{'borrowernumber'} eq $userId) {
-                C4::Reserves::CancelReserve($reserve);
-                $result->{'status'} = 'ok';
-            } else {
-                print $query->header(
-                    -type   => 'text/plain',
-                    -status => '400 Bad Request'
-                );
-                print 'Request doesn\'t belong to this patron ..';
-                exit 0;
-            }
-        } else {
-            print $query->header(
-                -type   => 'text/plain',
-                -status => '404 Not Found'
-            );
-            print "Request not found..";
-            exit 0;
-        }
-    } else {
-        print $query->header(
-            -type   => 'text/plain',
-            -status => '400 Bad Request'
-        );
-        print
-            'You have to specify either both \'userId\' & \'itemId\' or both \'userId\' & \'requestId\'..';
-        exit 0;
-    }
-    print $query->header(-type => 'text/plain', -charset => 'utf-8',);
-    print to_json($result);
 
-    exit 0;
+    } elsif (defined $userId and defined $requestId) {
+        $reserve = C4::Reserves::GetReserve($requestId);
+    } else {
+        C4::NCIP::NcipUtils::print400($query,
+            'You have to specify either both \'userId\' & \'itemId\' or both \'userId\' & \'requestId\'..'
+        );
+    }
+
+    C4::NCIP::NcipUtils::print404($query, "Request not found..")
+        unless $reserve;
+
+    C4::NCIP::NcipUtils::print403($query,
+        'Request doesn\'t belong to this patron ..')
+        unless $reserve->{'borrowernumber'} eq $userId;
+
+    C4::Reserves::CancelReserve($reserve);
+
+    $result->{'userId'}    = $reserve->{borrowernumber};
+    $result->{'itemId'}    = $reserve->{itemnumber};
+    $result->{'requestId'} = $reserve->{reserve_id};
+    $result->{'status'}    = 'cancelled';
+
+    C4::NCIP::NcipUtils::printJson($query, $result);
 }
 
 1;

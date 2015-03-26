@@ -21,31 +21,23 @@ package C4::NCIP::LookupItemSet;
 
 use Modern::Perl;
 
-use JSON qw(to_json);
-use C4::NCIP::NcipUtils;
-
 sub lookupItemSet {
-    my $query = shift;
+    my ($query) = @_;
 
     my $bibId = $query->param('bibId');
 
-    unless ($bibId) {
-        print $query->header(
-            -type   => 'text/plain',
-            -status => '400 Bad Request'
-        );
-        print "Param bibId is undefined..";
-        exit 0;
-    }
+    C4::NCIP::NcipUtils::print400($query, "Param bibId is undefined..")
+        unless $bibId;
 
     my $result;
-    # Parse Bibliographic data
-    $result->{bibData} = parseBiblio($bibId);
 
     my $circStatusDesired = defined $query->param('circulationStatusDesired');
 
     # Parse Items within BibRecord ..
     $result->{items} = parseItems($bibId, $circStatusDesired);
+
+    C4::NCIP::NcipUtils::print404($query, "Biblio not found..")
+        if scalar @{$result->{items}} == 0;
 
     my $holdQueueDesired = defined $query->param('holdQueueLengthDesired');
     my $itemRestrictsDesired
@@ -59,19 +51,16 @@ sub lookupItemSet {
         my $item = ${$result->{items}}[$i];
         if ($holdQueueDesired or $circStatusDesired) {
 
-            my $holds = C4::Reserves::GetReservesFromBiblionumber(
-                {   biblionumber => $bibId,
-                    itemnumber   => $item->{itemnumber},
-                    all_dates    => 1
-                }
-            );
+            my $holds = C4::Reserves::GetReserveCountFromItemnumber(
+                $item->{itemnumber});
+
             if ($holdQueueDesired) {
-                $item->{'holdQueueLength'} = scalar(@$holds);
+                $item->{'holdQueueLength'} = $holds;
             }
             if ($circStatusDesired) {
                 $item->{'circulationStatus'}
                     = C4::NCIP::NcipUtils::parseCirculationStatus($item,
-                    scalar @$holds);
+                    $holds);
 
                 # Delete keys not needed anymore
                 delete $item->{onloan};
@@ -89,15 +78,21 @@ sub lookupItemSet {
         }
         delete $item->{notforloan};
     }
-    print $query->header(-type => 'text/plain', -charset => 'utf-8',);
-    print to_json($result);
-    exit 0;
+    my $desiredSomething
+        = $holdQueueDesired
+        or $itemRestrictsDesired
+        or $circStatusDesired;
+
+    $result->{bibInfo} = parseBiblio($bibId)
+        unless $desiredSomething and defined $query->param('notBibInfo');
+
+    C4::NCIP::NcipUtils::printJson($query, $result);
 }
 
 sub parseBiblio {
-    my $bibId = shift;
-    my $dbh   = C4::Context->dbh;
-    my $sth   = $dbh->prepare("
+    my ($bibId) = @_;
+    my $dbh     = C4::Context->dbh;
+    my $sth     = $dbh->prepare("
         SELECT biblioitems.volume,
                 biblioitems.number,
                 biblioitems.isbn,

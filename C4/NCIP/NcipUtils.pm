@@ -20,24 +20,32 @@
 package C4::NCIP::NcipUtils;
 
 use Modern::Perl;
+use JSON qw(to_json);
 
 sub clearEmptyKeys {
-    my $hashref = shift;
+    my ($hashref) = @_;
 
     return undef unless $hashref;
 
     foreach my $key (keys $hashref) {
         delete $hashref->{$key} unless $hashref->{$key};
     }
-
     return $hashref;
+}
 
+sub clearEmptyKeysWithinArray {
+    my (@arrayOfHashrefs) = @_;
+
+    for (my $i = 0; $i < scalar @arrayOfHashrefs; ++$i) {
+        clearEmptyKeys($arrayOfHashrefs[$i]);
+    }
+    return \@arrayOfHashrefs;
 }
 
 sub parseCirculationStatus {
     my ($item, $holds) = @_;
 
-    if ($item->{datedue} or $item->{onloan} or $holds != 0) {
+    if ($holds != 0 or $item->{datedue} or $item->{onloan}) {
         return 'On Loan';
     }
     if ($item->{transfertwhen}) {
@@ -58,13 +66,49 @@ sub parseItemUseRestrictions {
 # Possible standardized values can be found here:
 # https://code.google.com/p/xcncip2toolkit/source/browse/core/trunk/service/src/main/java/org/extensiblecatalog/ncip/v2/service/Version1ItemUseRestrictionType.java
 
-    my $item = shift;
+    my ($item) = @_;
+
     my @toReturn;
     my $i = 0;
     if ($item->{notforloan}) {
         $toReturn[$i++] = 'In Library Use Only';
     }
     return \@toReturn;
+}
+
+sub printJson {
+    my ($query, $string) = @_;
+    print $query->header(-type => 'text/plain', -charset => 'utf-8',),
+        to_json($string);
+    exit 0;
+}
+
+sub print400 {
+    my ($query, $string) = @_;
+    print $query->header(-type => 'text/plain', -status => '400 Bad Request'),
+        $string;
+    exit 0;
+}
+
+sub print403 {
+    my ($query, $string) = @_;
+    print $query->header(-type => 'text/plain', -status => '403 Forbidden'),
+        $string;
+    exit 0;
+}
+
+sub print404 {
+    my ($query, $string) = @_;
+    print $query->header(-type => 'text/plain', -status => '404 Not Found'),
+        $string;
+    exit 0;
+}
+
+sub print409 {
+    my ($query, $string) = @_;
+    print $query->header(-type => 'text/plain', -status => '409 Conflict'),
+        $string;
+    exit 0;
 }
 
 1;
