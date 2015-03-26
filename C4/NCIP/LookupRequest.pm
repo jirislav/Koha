@@ -35,7 +35,8 @@ sub lookupRequest {
         my $itemId = $query->param('itemId');
 
         if (defined $userId and defined $itemId) {
-            $result = C4::Reserves::GetReserveFromBorrowernumberAndItemnumber($userId, $itemId);
+            $result = C4::Reserves::GetReserveFromBorrowernumberAndItemnumber(
+                $userId, $itemId);
         } else {
             print $query->header(
                 -type   => 'text/plain',

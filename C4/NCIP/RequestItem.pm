@@ -23,7 +23,7 @@ use Modern::Perl;
 
 use JSON qw(to_json);
 
-sub requestItem {# FIXME: Ask Koha is Book/Item CanBeReserved !! 
+sub requestItem {
     my $query  = shift;
     my $userId = $query->param('userId');
     if ($userId eq '') {
@@ -50,28 +50,48 @@ sub requestItem {# FIXME: Ask Koha is Book/Item CanBeReserved !!
     }
 
     my $itemLevelHold = 1;
-    if (not defined $itemId or not is_integer($itemId)) {
+    unless (defined $itemId) {
 
-        if (not defined $bibId) {
-            if (not defined $barcode or not is_integer($barcode)) {
+        unless (defined $bibId) {
+            unless (efined $barcode) {
                 print $query->header(
                     -type   => 'text/plain',
                     -status => '400 Bad Request'
                 );
-                print
-                    "Param itemId or barcode is/are undefined or is/are not number(s)..\n";
+                print "Param itemId or barcode is/are undefined\n";
                 print "Neither param bibId is specified..";
                 exit 0;
             } else {
                 $itemId = C4::Items::GetItemnumberFromBarcode($barcode);
             }
         } else {
+            # Here it is obvious it is requested Biblio level request ..
+            my $canBeReserved
+                = C4::Reserves::CanBookBeReserved($userId, $bibId);
+            unless ($canBeReserved eq 'OK') {
+                print $query->header(
+                    -type   => 'text/plain',
+                    -status => '409 Conflict'
+                );
+                print "Book cannot be reserved.. $canBeReserved";
+                exit 0;
+            }
             $itemLevelHold = 0;
         }
     }
     my $pickupLocation = $query->param('pickupLocation');
 
     if ($itemLevelHold) {
+        my $canBeReserved = C4::Reserves::CanItemBeReserved($userId, $itemId);
+        unless ($canBeReserved eq 'OK') {
+            print $query->header(
+                -type   => 'text/plain',
+                -status => '409 Conflict'
+            );
+            print "Item cannot be reserved.. $canBeReserved";
+            exit 0;
+        }
+
         my $iteminfo = C4::Items::GetItem($itemId, undef, 1)
             ;    # Needed to determine whether itemId exits ..
         if (not defined $iteminfo) {
@@ -184,7 +204,7 @@ sub placeHold {
 
         my $results;
 
-	# AddReserve currently doesn't return reserveId hence it's needed to parse it manually ..
+# AddReserve currently doesn't return reserveId hence it's needed to parse it manually ..
         unless ($reserveId) {
             #Parse RequestId of the last requested item ..
             my @reserves = C4::Reserves::GetReservesFromBiblionumber(
@@ -206,7 +226,7 @@ sub placeHold {
             }
 
         } else {
-            $results->{'status'}    = 'ok-verywell :))';
+            $results->{'status'}    = 'ok';
             $results->{'requestId'} = $reserveId;
         }
 
@@ -223,10 +243,6 @@ sub placeHold {
         print "User not found..";
     }
     exit 0;
-}
-
-sub is_integer {
-    defined $_[0] && $_[0] =~ /^[+-]?\d+$/;
 }
 
 1;
