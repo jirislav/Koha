@@ -100,6 +100,7 @@ BEGIN {
         &GetReservesFromItemnumber
         &GetReservesFromBiblionumber
         &GetReservesFromBorrowernumber
+	&GetReserveFromBorrowernumberAndItemnumber
         &GetReservesForBranch
         &GetReservesToBranch
         &GetReserveCount
@@ -459,7 +460,7 @@ Returns matching reserve of borrower on an item specified.
 
 sub GetReserveFromBorrowernumberAndItemnumber {
     my $borrowernumber = shift;
-    my %itemnumber = shift;
+    my $itemnumber = shift;
     my $dbh    = C4::Context->dbh;
     my $sth;
     $sth = $dbh->prepare("
@@ -468,7 +469,7 @@ sub GetReserveFromBorrowernumberAndItemnumber {
                 WHERE borrowernumber=?
                 AND itemnumber =?
                 ");
-    $sth->execute($borrowernumber, %itemnumber);
+    $sth->execute($borrowernumber, $itemnumber);
 
     return ${$sth->fetchall_arrayref({})}[0];
 

@@ -22,6 +22,7 @@ package C4::NCIP::LookupItem;
 use Modern::Perl;
 
 use JSON qw(to_json);
+use C4::NCIP::NcipUtils;
 
 sub lookupItem {
     my $query = shift;
@@ -72,17 +73,18 @@ sub lookupItem {
         }
         if (defined $query->param('circulationStatusDesired')) {
             $result->{'circulationStatus'}
-                = scalar(@$holds) == 0
-                ? parseCirculationStatus($iteminfo)
-                : 'On Loan';
-        }
-        if (defined $query->param('itemUseRestrictionTypeDesired')) {
-            my $restrictions = parseItemUseRestrictions($iteminfo);
-            unless (scalar @{$restrictions} == 0) {
-                $result->{'itemUseRestrictions'} = $restrictions;
-            }
+                = C4::NCIP::NcipUtils::parseCirculationStatus($iteminfo,
+                scalar @$holds);
         }
     }
+    if (defined $query->param('itemUseRestrictionTypeDesired')) {
+        my $restrictions
+            = C4::NCIP::NcipUtils::parseItemUseRestrictions($iteminfo);
+        unless (scalar @{$restrictions} == 0) {
+            $result->{'itemUseRestrictions'} = $restrictions;
+        }
+    }
+
     $result->{'item'} = parseItem($bibId, $itemId, $iteminfo);
     print $query->header(-type => 'text/plain', -charset => 'utf-8',);
     print to_json($result);
@@ -99,10 +101,13 @@ sub parseItem {
     $result->{bibId}            = $bibId;
     $result->{barcode}          = $item->{barcode};
     $result->{location}         = $item->{location};
-    $result->{agencyid}         = $item->{homebranch};
+    $result->{homebranch}       = $item->{homebranch};
+    $result->{restricted}       = $item->{restricted};
+    $result->{holdingbranch}    = $item->{holdingbranch};
     $result->{mediumtype}       = $item->{itype};
     $result->{copynumber}       = $item->{copynumber};
     $result->{callnumber}       = $item->{itemcallnumber};
+    $result->{ccode}            = $item->{ccode};
     $result->{biblioitemnumber} = $item->{biblioitemnumber};
     my $dbh = C4::Context->dbh;
     my $sth = $dbh->prepare("
@@ -125,7 +130,7 @@ sub parseItem {
         LEFT JOIN biblio ON biblio.biblionumber = biblioitems.biblionumber
         WHERE biblioitems.biblionumber = ?");
     $sth->execute($bibId);
-    my $data = clearEmptyKeys($sth->fetchrow_hashref);
+    my $data = $sth->fetchrow_hashref;
 
     return 'SQL query failed' unless $data;
 
@@ -133,50 +138,9 @@ sub parseItem {
         $result->{$key} = $data->{$key};
     }
 
-    $result = clearEmptyKeys($result);
+    $result = C4::NCIP::NcipUtils::clearEmptyKeys($result);
 
     return $result || 'failed';
-}
-
-sub parseCirculationStatus {
-    my $item = shift;
-    if ($item->{datedue} or $item->{onloan}) {
-        return 'On Loan';
-    }
-    if ($item->{transfertwhen}) {
-        return 'In Transit Between Library Locations';
-    }
-    if (   $item->{notforloan_per_itemtype}
-        or $item->{itemlost}
-        or $item->{withdrawn}
-        or $item->{damaged})
-    {
-        return 'Not Available';
-    }
-
-    return 'Available On Shelf';
-}
-
-sub parseItemUseRestrictions {
-# Possible standardized values can be found here:
-# https://code.google.com/p/xcncip2toolkit/source/browse/core/trunk/service/src/main/java/org/extensiblecatalog/ncip/v2/service/Version1ItemUseRestrictionType.java
-
-    my $item = shift;
-    my @toReturn;
-    my $i = 0;
-    if ($item->{notforloan}) {
-        $toReturn[$i++] = 'In Library Use Only';
-    }
-    return \@toReturn;
-}
-
-sub clearEmptyKeys {
-    my $hashref = shift;
-
-    foreach my $key (keys $hashref) {
-        delete $hashref->{$key} unless defined $hashref->{$key};
-    }
-    return $hashref;
 }
 
 1;
