@@ -35,10 +35,8 @@ sub search {
         borrowers.borrowernumber, borrowers.surname, borrowers.firstname,
         borrowers.streetnumber, borrowers.streettype, borrowers.address,
         borrowers.address2, borrowers.city, borrowers.state, borrowers.zipcode,
-        borrowers.country, cardnumber, borrowers.dateexpiry, borrowers.dateofbirth,
+        borrowers.country, cardnumber, borrowers.dateexpiry,
         borrowers.borrowernotes, borrowers.branchcode, borrowers.email,
-        borrowers.emailpro, borrowers.phone, borrowers.phonepro, borrowers.mobile,
-        borrowers.altcontactphone, borrowers.B_phone, borrowers.B_email,
         borrowers.userid, borrowers.dateofbirth,
         categories.description AS category_description, categories.category_type,
         branches.branchname";

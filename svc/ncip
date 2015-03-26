@@ -36,26 +36,19 @@ use C4::NCIP::CancelRequestItem qw/cancelRequestItem/;
 my $query = new CGI;
 binmode STDOUT, ':encoding(UTF-8)';
 
-my ($status, $cookie, $sessionID)
+my ($status, undef, undef)
     = check_api_auth($query, {editcatalogue => 'edit_catalogue'});
-unless ($status eq "ok") {
-    print $query->header(-type => 'text/plain', -status => '403 Forbidden');
-    print $status;
-    exit 0;
-}
+
+C4::NCIP::NcipUtils::print403($query, $status)
+    unless ($status eq "ok");
 
 # do initial validation
 
 if ($query->request_method eq "GET") {
     my $service = $query->param('service');
-    unless (defined $service) {
-        print $query->header(
-            -type   => 'text/plain',
-            -status => '400 Bad Request'
-        );
-        print "Param service is undefined..";
-        exit 0;
-    }
+
+    C4::NCIP::NcipUtils::print400($query, "Param service is undefined..")
+        unless $service;
 
     if ($service eq 'lookup_item') {
         C4::NCIP::LookupItem::lookupItem($query);
@@ -72,19 +65,15 @@ if ($query->request_method eq "GET") {
     } elsif ($service eq 'cancel_request_item') {
         C4::NCIP::CancelRequestItem::cancelRequestItem($query);
     } else {
-        print $query->header(
-            -type   => 'text/plain',
-            -status => '400 Bad Request'
-        );
-        print "Param service not recognized..";
-        exit 0;
+        C4::NCIP::NcipUtils::print400($query,
+            "Param service not recognized..");
     }
 } else {
     print $query->header(
         -type   => 'text/plain',
-        -status => '405 Method not allowed'
-    );
-    print 'Only GET method is allowed..';
+        -status => '405 Method Not Allowed'
+        ),
+        'Only GET method is allowed..';
     exit 0;
 }
 
