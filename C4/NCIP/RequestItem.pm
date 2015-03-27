@@ -21,228 +21,127 @@ package C4::NCIP::RequestItem;
 
 use Modern::Perl;
 
-use JSON qw(to_json);
-
 sub requestItem {
     my $query  = shift;
     my $userId = $query->param('userId');
-    if ($userId eq '') {
-        print $query->header(
-            -type   => 'text/plain',
-            -status => '400 Bad Request'
-        );
-        print "Param userId is undefined..";
-        exit 0;
-    }
+
+    C4::NCIP::NcipUtils::print400($query, "Param userId is undefined..")
+        unless $userId;
 
     my $bibId   = $query->param('bibId');
     my $itemId  = $query->param('itemId');
     my $barcode = $query->param('barcode');
 
-    if (defined $bibId and (defined $itemId or defined $barcode)) {
-        print $query->header(
-            -type   => 'text/plain',
-            -status => '400 Bad Request'
-        );
-        print
-            "Cannot process both bibId & itemId/barcode .. you have to choose only one";
-        exit 0;
-    }
+    C4::NCIP::NcipUtils::print400($query,
+        "Cannot process both bibId & itemId/barcode .. you have to choose only one"
+    ) if $bibId and ($itemId or $barcode);
 
     my $itemLevelHold = 1;
-    unless (defined $itemId) {
-
-        unless (defined $bibId) {
-            unless (efined $barcode) {
-                print $query->header(
-                    -type   => 'text/plain',
-                    -status => '400 Bad Request'
-                );
-                print "Param itemId or barcode is/are undefined\n";
-                print "Neither param bibId is specified..";
-                exit 0;
-            } else {
-                $itemId = C4::Items::GetItemnumberFromBarcode($barcode);
-            }
-        } else {
-            # Here it is obvious it is requested Biblio level request ..
+    unless ($itemId) {
+        if ($bibId) {
             my $canBeReserved
                 = C4::Reserves::CanBookBeReserved($userId, $bibId);
-            unless ($canBeReserved eq 'OK') {
-                print $query->header(
-                    -type   => 'text/plain',
-                    -status => '409 Conflict'
-                );
-                print "Book cannot be reserved.. $canBeReserved";
-                exit 0;
-            }
+
+            print409($query, "Book cannot be reserved.. $canBeReserved")
+                unless ($canBeReserved eq 'OK');
+
             $itemLevelHold = 0;
+        } else {
+            C4::NCIP::NcipUtils::print400($query,
+                "Param bibId neither any of itemId and barcode is undefined")
+                unless $barcode;
+
+            $itemId = C4::Items::GetItemnumberFromBarcode($barcode);
         }
     }
-    my $pickupLocation = $query->param('pickupLocation');
 
     if ($itemLevelHold) {
         my $canBeReserved = C4::Reserves::CanItemBeReserved($userId, $itemId);
-        unless ($canBeReserved eq 'OK') {
-            print $query->header(
-                -type   => 'text/plain',
-                -status => '409 Conflict'
-            );
-            print "Item cannot be reserved.. $canBeReserved";
-            exit 0;
-        }
 
-        my $iteminfo = C4::Items::GetItem($itemId, undef, 1)
-            ;    # Needed to determine whether itemId exits ..
-        if (not defined $iteminfo) {
-            print $query->header(
-                -type   => 'text/plain',
-                -status => '404 Not Found'
-            );
-            print "Item you want to request was not found..";
-            exit 0;
-        }
-        if ($pickupLocation == '') {
-            $pickupLocation = $iteminfo->{'holdingbranch'};
-        }
-        $bibId = $iteminfo->{'biblionumber'};
+        C4::NCIP::NcipUtils::print409($query,
+            "Item cannot be reserved.. $canBeReserved")
+            unless $canBeReserved eq 'OK';
+
+        $bibId = C4::Biblio::GetBiblionumberFromItemnumber($itemId);
+    }
+
+# RequestType specifies if user wants the book now or doesn't mind to get into queue
+    my $requestType = $query->param('requestType');
+
+    if ($requestType) {
+        C4::NCIP::NcipUtils::print400($query,
+            "Param requestType not recognized.. Can be \'Loan\' or \'Hold\'")
+            if (not $requestType =~ /^Loan$|^Hold$/);
     } else {
-        $pickupLocation = C4::Context->userenv->{'branch'};
-        my $biblio = C4::Biblio::GetBiblio($bibId);
-        if (not defined $biblio) {
-            print $query->header(
-                -type   => 'text/plain',
-                -status => '404 Not Found'
-            );
-            print "Record you want to request was not found..";
-            exit 0;
-        }
+        $requestType = 'Hold';
     }
 
-    my $requestType = $query->param('requestType')
-        || 'Hold'
-        ; # RequestType specifies if user wants the book now or doesn't mind to get into queue
-
-    if (not $requestType =~ /^Loan$|^Hold$/i) {
-        print $query->header(
-            -type   => 'text/plain',
-            -status => '400 Bad Request'
-        );
-        print "Param requestType not found/recognized..";
-        exit 0;
-    }
     # Process rank & whether user hasn't requested this item yet ..
     my $reserves = C4::Reserves::GetReservesFromBiblionumber(
-        {biblionumber => $bibId, itemnumber => $itemId, all_dates => 1})
-        ;    # Get rank ..
+        {biblionumber => $bibId, itemnumber => $itemId, all_dates => 1});
 
     foreach my $res (@$reserves) {
-        if ($res->{borrowernumber} eq $userId) {
-            print $query->header(
-                -type   => 'text/plain',
-                -status => '403 Forbidden'
-            );
-            print "User already has item requested";
-            exit 0;
-        }
+        C4::NCIP::NcipUtils::print403($query,
+            "User already has item requested")
+            if $res->{borrowernumber} eq $userId;
     }
 
     my $rank = scalar(@$reserves);
 
-    if ($requestType =~ '/^Loan$/' and $rank != 0) {
-        print $query->header(
-            -type   => 'text/plain',
-            -status => '409 Conflict'
-        );
-        print "Loan not possible  .. holdqueuelength exists";
-        exit 0;
-    }
+    C4::NCIP::NcipUtils::print409($query,
+        "Loan not possible  .. holdqueuelength exists")
+        if $requestType ne 'Hold' and $rank != 0;
 
     my $expirationdate = $query->param('pickupExpiryDate');
     my $startdate      = $query->param('earliestDateNeeded');
     my $notes          = $query->param('notes') || 'Placed by svc/ncip';
+    my $pickupLocation = $query->param('pickupLocation')
+        || C4::Context->userenv->{'branch'};
 
     if ($itemLevelHold) {
-        placeHold($query, $bibId, $itemId, $userId,
-            $pickupLocation, $startdate, undef, $expirationdate, $notes,
-            ++$rank, undef);
+        placeHold(
+            $query,          $bibId,     $itemId,         $userId,
+            $pickupLocation, $startdate, $expirationdate, $notes,
+            ++$rank,         undef
+        );
     } else {
-        placeHold($query, $bibId, undef, $userId,
-            $pickupLocation, $startdate, undef, $expirationdate, $notes,
-            ++$rank, 'any');
+        placeHold(
+            $query,          $bibId,     undef,           $userId,
+            $pickupLocation, $startdate, $expirationdate, $notes,
+            ++$rank,         'any'
+        );
     }
 }
 
 sub placeHold {
-    my ($input,  $biblionumber, $checkitem, $borrowernumber,
-        $branch, $startdate,    $title,     $expirationdate,
-        $notes,  $rank,         $request
+    my ($query,  $bibId,     $itemId,         $userId,
+        $branch, $startdate, $expirationdate, $notes,
+        $rank,   $request
     ) = @_;
-    my $borrower
-        = C4::Members::GetMember('borrowernumber' => $borrowernumber);
 
     my $found;
 
-    if (defined $checkitem) {
-        my $item = C4::Items::GetItem($checkitem);
+    my $userExists = C4::Members::GetBorrowerCategorycode($userId);
 
-        unless (C4::Context->preference('ReservesNeedReturns')) {
-            $rank = '0';
-            $found = 'W' if $item->{'holdingbranch'} eq $branch;
-        }
-        $biblionumber = $item->{'biblionumber'};
-    }
-    if ($borrower) {
-        my $reserveId = C4::Reserves::AddReserve(
-            $branch,       $borrower->{'borrowernumber'},
-            $biblionumber, 'a',
-            undef,         $rank,
-            $startdate,    $expirationdate,
-            $notes,        $title,
-            $checkitem,    $found
-        );
+    C4::NCIP::NcipUtils::print404($query, "User not found..")
+        unless $userExists;
 
-        my $results;
+    my $reserveId = C4::Reserves::AddReserve(
+        $branch, $userId, $bibId,     'a',
+        undef,   $rank,   $startdate, $expirationdate,
+        $notes,  undef,   $itemId,    $found
+    );
 
-# AddReserve currently doesn't return reserveId hence it's needed to parse it manually ..
-        unless ($reserveId) {
-            #Parse RequestId of the last requested item ..
-            my @reserves = C4::Reserves::GetReservesFromBiblionumber(
-                {   biblionumber => $biblionumber,
-                    itemnumber   => $checkitem,
-                    all_dates    => 1
-                }
-            );
+    my $results;
 
-            my $lastReserve = $reserves[-1][-1];
+    $results->{'status'}    = 'reserved';
+    $results->{'bibId'}     = $bibId;
+    $results->{'userId'}    = $userId;
+    $results->{'requestId'} = $reserveId;
 
-            if (    $lastReserve
-                and $lastReserve->{'borrowernumber'} eq $borrowernumber)
-            {
-                $results->{'status'}    = 'ok';
-                $results->{'requestId'} = $lastReserve->{'reserve_id'};
-            } else {
-                $results->{'status'} = 'failed';
-            }
+    $results->{'itemId'} = $itemId if $itemId;
 
-        } else {
-            $results->{'status'}    = 'ok';
-            $results->{'requestId'} = $reserveId;
-        }
-
-        print $input->header(
-            -type    => 'text/plain',
-            -charset => 'utf-8',
-        );
-        print to_json($results);
-    } else {
-        print $input->header(
-            -type   => 'text/plain',
-            -status => '404 Not Found'
-        );
-        print "User not found..";
-    }
-    exit 0;
+    C4::NCIP::NcipUtils::printJson($query, $results);
 }
 
 1;
