@@ -21,6 +21,40 @@ package C4::NCIP::CancelRequestItem;
 
 use Modern::Perl;
 
+=head1 NAME
+
+C4::NCIP::CancelRequestItem - NCIP module for effective processing of CancelRequestItem NCIP service
+
+=head1 SYNOPSIS
+
+  use C4::NCIP::CancelRequestItem;
+
+=head1 DESCRIPTION
+
+        Info about NCIP and it's services can be found here: http://www.niso.org/workrooms/ncip/resources/
+
+=cut
+
+=head1 METHODS
+
+=head2 cancelRequestItem
+
+        cancelRequestItem($cgiInput)
+
+        Expected input is as e.g. as follows:
+
+	http://188.166.14.82:8080/cgi-bin/koha/svc/ncip?service=cancel_request_item&requestId=89&userId=4
+        or
+	http://188.166.14.82:8080/cgi-bin/koha/svc/ncip?service=cancel_request_item&itemId=95&userId=3
+
+        REQUIRED PARAMS:
+        Param 'service=cancel_request_item' tells svc/ncip to forward the query here.
+        Param 'userId=3' specifies borrowernumber whos request is being cancelled.
+        Param 'itemId=4' specifies itemnumber to cancel.
+	Param 'requestId=89' specifies request to cancel.
+
+=cut
+
 sub cancelRequestItem {
     my ($query)   = @_;
     my $userId    = $query->param('userId');

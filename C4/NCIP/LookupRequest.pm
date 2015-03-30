@@ -21,6 +21,40 @@ package C4::NCIP::LookupRequest;
 
 use Modern::Perl;
 
+=head1 NAME
+
+C4::NCIP::LookupRequest - NCIP module for effective processing of LookupRequest NCIP service
+
+=head1 SYNOPSIS
+
+  use C4::NCIP::LookupRequest;
+
+=head1 DESCRIPTION
+
+        Info about NCIP and it's services can be found here: http://www.niso.org/workrooms/ncip/resources/
+
+=cut
+
+=head1 METHODS
+
+=head2 lookupRequest
+
+        lookupRequest($cgiInput)
+
+        Expected input is as e.g. as follows:
+	http://188.166.14.82:8080/cgi-bin/koha/svc/ncip?service=lookup_request&userId=1&itemId=111
+        or
+	http://188.166.14.82:8080/cgi-bin/koha/svc/ncip?service=lookup_request&requestId=83
+
+        REQUIRED PARAMS:
+        Param 'service=lookup_request' tells svc/ncip to forward the query here.
+	Either:
+	        Param 'userId=3' specifies borrowernumber to look for.
+		Param 'itemId=1' specifies itemnumber to look for.
+	Or:
+		Param 'requestId=83' specifies number of request to look for-
+=cut
+
 sub lookupRequest {
     my ($query) = @_;
     my $requestId = $query->param('requestId');

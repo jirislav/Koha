@@ -22,6 +22,44 @@ package C4::NCIP::LookupItem;
 use Modern::Perl;
 use C4::NCIP::NcipUtils;
 
+=head1 NAME
+
+C4::NCIP::LookupItem - NCIP module for effective processing of LookupItem NCIP service
+
+=head1 SYNOPSIS
+
+  use C4::NCIP::LookupItem;
+
+=head1 DESCRIPTION
+
+        Info about NCIP and it's services can be found here: http://www.niso.org/workrooms/ncip/resources/
+
+=cut
+
+=head1 METHODS
+
+=head2 lookupItem
+
+        lookupItem($cgiInput)
+
+        Expected input is as e.g. as follows:
+        http://188.166.14.82:8080/cgi-bin/koha/svc/ncip?service=lookup_item&itemId=95&holdQueueLengthDesired&circulationStatusDesired&itemUseRestrictionTypeDesired&notItemInfo
+        or
+        http://188.166.14.82:8080/cgi-bin/koha/svc/ncip?service=lookup_item&itemId=95
+        http://188.166.14.82:8080/cgi-bin/koha/svc/ncip?service=lookup_item&barcode=956216
+
+        REQUIRED PARAMS:
+        Param 'service=lookup_item' tells svc/ncip to forward the query here.
+        Param 'itemId=4' specifies itemnumber to look for.
+        Param 'barcode=956216' specifies barcode to look for.
+
+        OPTIONAL PARAMS:
+        holdQueueLengthDesired specifies to include number of reserves placed on item
+        circulationStatusDesired specifies to include circulation statuses of item
+        itemUseRestrictionTypeDesired specifies to inlude item use restriction type of item
+        notItemInfo specifies to omit item information (normally returned)
+=cut
+
 sub lookupItem {
     my ($query) = @_;
 
@@ -75,6 +113,14 @@ sub lookupItem {
 
     C4::NCIP::NcipUtils::printJson($query, $result);
 }
+
+=head2 parseItem
+
+	parseItem($biblionumber, $itemnumber, $item)
+
+	Returns info of biblio level & item level
+
+=cut
 
 sub parseItem {
     my ($bibId, $itemId, $item) = @_;

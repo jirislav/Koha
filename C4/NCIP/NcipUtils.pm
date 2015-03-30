@@ -22,6 +22,28 @@ package C4::NCIP::NcipUtils;
 use Modern::Perl;
 use JSON qw(to_json);
 
+=head1 NAME
+
+C4::NCIP::NcipUtils - NCIP Common subroutines used in most of C4::NCIP modules
+
+=head1 SYNOPSIS
+
+  use C4::NCIP::NcipUtils;
+
+=head1 DESCRIPTION
+
+        Info about NCIP and it's services can be found here: http://www.niso.org/workrooms/ncip/resources/
+
+=cut
+
+=head1 METHODS
+
+=head2 clearEmptyKeys
+
+	clearEmptyKeys($hashref)
+
+=cut
+
 sub clearEmptyKeys {
     my ($hashref) = @_;
 
@@ -33,6 +55,12 @@ sub clearEmptyKeys {
     return $hashref;
 }
 
+=head2 clearEmptyKeysWithinArray
+
+	clearEmptyKeysWithinArray($arrayWithHashrefs)
+
+=cut
+
 sub clearEmptyKeysWithinArray {
     my (@arrayOfHashrefs) = @_;
 
@@ -41,6 +69,18 @@ sub clearEmptyKeysWithinArray {
     }
     return \@arrayOfHashrefs;
 }
+
+=head2 parseCirculationStatus
+
+	parseCirculationStatus($item, $numberOfHoldsOnItem)
+
+	Returns one of these:
+		On Loan
+		In Transit Between Library Locations
+		Not Available
+		Available On Shelf
+
+=cut
 
 sub parseCirculationStatus {
     my ($item, $holds) = @_;
@@ -62,6 +102,15 @@ sub parseCirculationStatus {
     return 'Available On Shelf';
 }
 
+=head2 parseItemUseRestrictions
+
+	parseItemUseRestrictions($item)
+
+	Returns array of restriction NCIP formatted
+	For now can return only 'In Library Use Only' within array if $item->{notforloan} is true
+
+=cut
+
 sub parseItemUseRestrictions {
 # Possible standardized values can be found here:
 # https://code.google.com/p/xcncip2toolkit/source/browse/core/trunk/service/src/main/java/org/extensiblecatalog/ncip/v2/service/Version1ItemUseRestrictionType.java
@@ -76,12 +125,30 @@ sub parseItemUseRestrictions {
     return \@toReturn;
 }
 
+=head2 printJson
+
+	printJson($cgiInput, $hashref)
+
+	Prints header as text/plain with charset utf-8 and status 200 & converts $hashref to json format being printed to output.
+
+=cut
+
 sub printJson {
     my ($query, $string) = @_;
-    print $query->header(-type => 'text/plain', -charset => 'utf-8',),
+    print $query->header(
+        -type    => 'text/plain',
+        -charset => 'utf-8',
+        -status  => '200 OK'
+        ),
         to_json($string);
     exit 0;
 }
+
+=head2 print400
+
+	print400($cgiInput, $message)
+
+=cut
 
 sub print400 {
     my ($query, $string) = @_;
@@ -90,6 +157,12 @@ sub print400 {
     exit 0;
 }
 
+=head2 print403
+
+        print403($cgiInput, $message)
+
+=cut
+
 sub print403 {
     my ($query, $string) = @_;
     print $query->header(-type => 'text/plain', -status => '403 Forbidden'),
@@ -97,12 +170,24 @@ sub print403 {
     exit 0;
 }
 
+=head2 print404
+
+        print404($cgiInput, $message)
+
+=cut
+
 sub print404 {
     my ($query, $string) = @_;
     print $query->header(-type => 'text/plain', -status => '404 Not Found'),
         $string;
     exit 0;
 }
+
+=head2 print409
+
+        print409($cgiInput, $message)
+
+=cut
 
 sub print409 {
     my ($query, $string) = @_;

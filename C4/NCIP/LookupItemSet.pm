@@ -21,6 +21,42 @@ package C4::NCIP::LookupItemSet;
 
 use Modern::Perl;
 
+=head1 NAME
+
+C4::NCIP::LookupItemSet - NCIP module for effective processing of LookupItemSet NCIP service
+
+=head1 SYNOPSIS
+
+  use C4::NCIP::LookupItemSet;
+
+=head1 DESCRIPTION
+
+        Info about NCIP and it's services can be found here: http://www.niso.org/workrooms/ncip/resources/
+
+=cut
+
+=head1 METHODS
+
+=head2 lookupItemSet
+
+        lookupItemSet($cgiInput)
+
+        Expected input is as e.g. as follows:
+	http://188.166.14.82:8080/cgi-bin/koha/svc/ncip?service=lookup_item_set&bibId=95&holdQueueLengthDesired&circulationStatusDesired&itemUseRestrictionTypeDesired&notBibInfo
+	or
+	http://188.166.14.82:8080/cgi-bin/koha/svc/ncip?service=lookup_item_set&bibId=95
+
+        REQUIRED PARAMS:
+        Param 'service=lookup_item_set' tells svc/ncip to forward the query here.
+        Param 'bibId=4' specifies biblionumber look for.
+
+        OPTIONAL PARAMS:
+	holdQueueLengthDesired specifies to include number of reserves placed on items of this biblio or on biblio itself
+	circulationStatusDesired specifies to include circulation statuses of all items of this biblio
+	itemUseRestrictionTypeDesired specifies to inlude item use restriction types of all items of this biblio
+	notBibInfo specifies to omit bibliographic information (normally returned)
+=cut
+
 sub lookupItemSet {
     my ($query) = @_;
 
@@ -89,6 +125,16 @@ sub lookupItemSet {
     C4::NCIP::NcipUtils::printJson($query, $result);
 }
 
+=head2 parseBiblio
+
+	parseBiblio($biblionumber)
+
+	On success returns hashref with bibliodata from tables biblioitems & biblio relative to NCIP
+
+	On failure returns string
+
+=cut
+
 sub parseBiblio {
     my ($bibId) = @_;
     my $dbh     = C4::Context->dbh;
@@ -116,6 +162,14 @@ sub parseBiblio {
 
     return $data || 'SQL query failed..';
 }
+
+=head2 parseItems
+
+	parseItems($biblionumber, $circulationStatusDesired)
+
+	Returns array of items with data relative to NCIP from table items
+
+=cut
 
 sub parseItems {
     my ($bibId, $circStatusDesired) = @_;

@@ -21,6 +21,47 @@ package C4::NCIP::RequestItem;
 
 use Modern::Perl;
 
+=head1 NAME
+
+C4::NCIP::RequestItem - NCIP module for effective processing of RequestItem NCIP service
+
+=head1 SYNOPSIS
+
+  use C4::NCIP::RequestItem;
+
+=head1 DESCRIPTION
+
+	Info about NCIP and it's services can be found here: http://www.niso.org/workrooms/ncip/resources/
+
+=cut
+
+=head1 METHODS
+
+=head2 requestItem
+
+	requestItem($cgiInput)
+
+	Expected input is as e.g. as follows:
+
+	http://KohaIntranet:8080/cgi-bin/koha/svc/ncip?service=request_item&requestType=Hold&userId=3&itemid=4&pickupExpiryDate=28/03/2015&pickupLocation=DOSP
+	or
+	http://KohaIntranet:8080/cgi-bin/koha/svc/ncip?service=request_item&userId=3&bibId=7
+	
+
+	REQUIRED PARAMS:
+	Param 'service=request_item' tells svc/ncip to forward the query here.
+	Param 'userId=3' specifies borrowernumber to place Reserve to.
+	Param 'itemId=4' specifies itemnumber to place Reserve on.
+		This param can be replaced with 'barcode=1103246'. But still one of these is required.
+		Or with 'bibId=3' - then it is Bibliographic Level Hold.
+
+	OPTIONAL PARAMS:
+	Param 'requestType=Hold' can be either 'Hold' or 'Loan'.
+	Param 'pickupExpiryDate=28/06/2015' tells until what date is user interested into specified item.
+	Param 'pickuplocation=DOSP' specifies which branch is user expecting pickup at.
+
+=cut
+
 sub requestItem {
     my $query  = shift;
     my $userId = $query->param('userId');
@@ -112,6 +153,12 @@ sub requestItem {
         );
     }
 }
+
+=head2 placeHold
+
+	placeHold($inputCGI, $biblionumber, $itemnumber, $borrowernumber, $pickup, $startdate, $expirationdate, $notes, $rank, $requesttype)
+
+=cut
 
 sub placeHold {
     my ($query,  $bibId,     $itemId,         $userId,

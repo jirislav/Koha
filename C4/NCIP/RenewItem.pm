@@ -23,6 +23,38 @@ use Modern::Perl;
 
 use JSON qw(to_json);
 
+=head1 NAME
+
+C4::NCIP::RenewItem - NCIP module for effective processing of RenewItem NCIP service
+
+=head1 SYNOPSIS
+
+  use C4::NCIP::RenewItem;
+
+=head1 DESCRIPTION
+
+        Info about NCIP and it's services can be found here: http://www.niso.org/workrooms/ncip/resources/
+
+=cut
+
+=head1 METHODS
+
+=head2 renewItem
+
+        renewItem($cgiInput)
+
+        Expected input is as e.g. as follows:
+	http://188.166.14.82:8080/cgi-bin/koha/svc/ncip?service=renew_item&desiredDateDue=20/04/2015&itemId=382&userId=3
+
+        REQUIRED PARAMS:
+        Param 'service=renew_item' tells svc/ncip to forward the query here.
+        Param 'userId=3' specifies borrowernumber as current borrower of Renewal item.
+        Param 'itemId=4' specifies itemnumber to place Renewal on.
+
+        OPTIONAL PARAMS:
+	Param 'desiredDateDue=20/04/2015' specifies when would user like to have new DateDue - it is checked against Koha's default RenewalDate & if it is bigger than that, Koha's default RenewalDate is used instead
+=cut
+
 sub renewItem {
     my $query  = shift;
     my $itemId = $query->param('itemId');
