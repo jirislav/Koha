@@ -75,11 +75,38 @@ sub lookupRequest {
             $itemId);
     }
 
+    my $onLoanUntil = parseDateDue($result->{'itemnumber'});
+    $result->{'onloanuntil'} = $onLoanUntil if $onLoanUntil;
+
     C4::NCIP::NcipUtils::print404($query, "Request not found..")
         unless $result;
 
     C4::NCIP::NcipUtils::clearEmptyKeys($result);
 
     C4::NCIP::NcipUtils::printJson($query, $result);
+}
+
+=head2 parseDateDue
+
+	parseDateDue($itemnumber)
+
+	Returns item's date_due if exists .. else undef
+
+=cut
+
+sub parseDateDue {
+
+    my ($itemId) = @_;
+    my $dbh      = C4::Context->dbh;
+    my $sth      = $dbh->prepare("
+        SELECT date_due
+        FROM issues
+        WHERE itemnumber = ?");
+    $sth->execute($itemId);
+
+    my $issue = $sth->fetchrow_hashref;
+    return unless $issue;
+
+    return $issue->{date_due};
 }
 1;

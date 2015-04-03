@@ -120,28 +120,27 @@ sub renewItem {
         $dateDue = Koha::DateUtils::dt_from_string($dateDue);
         $dateDue->set_hour(23);
         $dateDue->set_minute(59);
-        if ($dateDue > $maxDateDue) {
-            $dateDue = $maxDateDue;
-        }    # Here is the restriction done ..
-
+        if ($dateDue > $maxDateDue || $dateDue < $now) {
+            $dateDue = $maxDateDue;    # Here is the restriction done ..
+        }
     }
     my ($okay, $error)
         = C4::Circulation::CanBookBeRenewed($userId, $itemId, '0');
 
+    C4::NCIP::NcipUtils::print409($query, $error) unless $okay;
+
+    $dateDue
+        = C4::Circulation::AddRenewal($userId, $itemId, $branch, $dateDue);
+
     my $result;
-    if ($okay) {
-        $dateDue = C4::Circulation::AddRenewal($userId, $itemId, $branch,
-            $dateDue);
-        $result->{'dateDue'} = Koha::DateUtils::output_pref(
-            {dt => $dateDue, as_due_date => 1});
-    } else {
-        $result->{'error'} = $error;
-    }
+    $result->{'itemId'}     = $itemId;
+    $result->{'userId'}     = $userId;
+    $result->{'branchcode'} = $branch;
 
-    print $query->header(-type => 'text/plain', -charset => 'utf-8',);
-    print to_json($result);
+    $result->{'dateDue'}
+        = Koha::DateUtils::output_pref({dt => $dateDue, as_due_date => 1});
 
-    exit 0;
+    C4::NCIP::NcipUtils::printJson($query, $result);
 }
 
 1;

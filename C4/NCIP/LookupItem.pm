@@ -150,8 +150,8 @@ sub parseItem {
 
     return 'SQL query failed' unless $result;
 
-    $result->{itemId}        = $itemId;
-    $result->{bibId}         = $bibId;
+    $result->{itemnumber}    = $itemId;
+    $result->{biblionumber}  = $bibId;
     $result->{barcode}       = $item->{barcode};
     $result->{location}      = $item->{location};
     $result->{homebranch}    = $item->{homebranch};

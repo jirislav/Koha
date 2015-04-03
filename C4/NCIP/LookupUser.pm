@@ -131,6 +131,8 @@ sub parseUserData {
 		B_country,
 		B_email,
 		B_phone,
+		dateofbirth,
+		branchcode,
 		categorycode,
 		dateenrolled,
 		dateexpiry
@@ -178,8 +180,7 @@ sub parseUserFiscalAccount {
 		itemnumber,
 		date,
 		amount,
-		description,
-		note
+		description
         FROM accountlines
         WHERE borrowernumber = ?
 	ORDER BY date desc,timestamp DESC");

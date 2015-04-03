@@ -122,7 +122,7 @@ sub requestItem {
         {biblionumber => $bibId, itemnumber => $itemId, all_dates => 1});
 
     foreach my $res (@$reserves) {
-        C4::NCIP::NcipUtils::print403($query,
+        C4::NCIP::NcipUtils::print409($query,
             "User already has item requested")
             if $res->{borrowernumber} eq $userId;
     }
@@ -133,11 +133,26 @@ sub requestItem {
         "Loan not possible  .. holdqueuelength exists")
         if $requestType ne 'Hold' and $rank != 0;
 
-    my $expirationdate = $query->param('pickupExpiryDate');
-    my $startdate      = $query->param('earliestDateNeeded');
-    my $notes          = $query->param('notes') || 'Placed by svc/ncip';
+    my $now = DateTime->now(time_zone => C4::Context->tz());
+
+    my $expirationdate
+        = Koha::DateUtils::dt_from_string($query->param('pickupExpiryDate'));
+    $expirationdate
+        = $expirationdate < $now ? undef : $query->param('pickupExpiryDate');
+
+    my $startdate = Koha::DateUtils::dt_from_string(
+        $query->param('earliestDateNeeded'));
+    $startdate
+        = $startdate < $now ? undef : $query->param('earliestDateNeeded');
+
+    my $notes = $query->param('notes') || 'Placed by svc/ncip';
     my $pickupLocation = $query->param('pickupLocation')
         || C4::Context->userenv->{'branch'};
+
+    my $branchExists = C4::Branch::GetBranchName($pickupLocation);
+    C4::NCIP::NcipUtils::print409($query,
+        "Specified pickup location doesn't exist")
+        unless $branchExists;
 
     if ($itemLevelHold) {
         placeHold(
