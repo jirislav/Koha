@@ -75,11 +75,11 @@ sub lookupRequest {
             $itemId);
     }
 
-    my $onLoanUntil = parseDateDue($result->{'itemnumber'});
-    $result->{'onloanuntil'} = $onLoanUntil if $onLoanUntil;
-
     C4::NCIP::NcipUtils::print404($query, "Request not found..")
         unless $result;
+
+    my $onLoanUntil = parseDateDue($result->{'itemnumber'});
+    $result->{'onloanuntil'} = $onLoanUntil if $onLoanUntil;
 
     C4::NCIP::NcipUtils::clearEmptyKeys($result);
 

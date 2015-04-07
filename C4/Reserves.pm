@@ -471,8 +471,7 @@ sub GetReserveFromBorrowernumberAndItemnumber {
                 ");
     $sth->execute($borrowernumber, $itemnumber);
 
-    return ${$sth->fetchall_arrayref({})}[0];
-
+    return $sth->fetchrow_hashref();
 }
 
 #-------------------------------------------------------------------------------------
