@@ -159,8 +159,10 @@ sub parseBiblio {
         WHERE biblioitems.biblionumber = ?");
     $sth->execute($bibId);
     my $data = C4::NCIP::NcipUtils::clearEmptyKeys($sth->fetchrow_hashref);
+    return 'SQL query failed..' unless $data;
 
-    return $data || 'SQL query failed..';
+    $data->{'biblionumber'} = $bibId;
+    return $data;
 }
 
 =head2 parseItems
@@ -185,6 +187,7 @@ sub parseItems {
 		location,
 		ccode,
 		materials,
+		itype,
 		copynumber";
     if ($circStatusDesired) {
         $query .= ",

@@ -150,17 +150,17 @@ sub parseItem {
 
     return 'SQL query failed' unless $result;
 
-    $result->{itemnumber}    = $itemId;
-    $result->{biblionumber}  = $bibId;
-    $result->{barcode}       = $item->{barcode};
-    $result->{location}      = $item->{location};
-    $result->{homebranch}    = $item->{homebranch};
-    $result->{restricted}    = $item->{restricted};
-    $result->{holdingbranch} = $item->{holdingbranch};
-    $result->{mediumtype}    = $item->{itype};
-    $result->{copynumber}    = $item->{copynumber};
-    $result->{callnumber}    = $item->{itemcallnumber};
-    $result->{ccode}         = $item->{ccode};
+    $result->{itemnumber}     = $itemId;
+    $result->{biblionumber}   = $bibId;
+    $result->{barcode}        = $item->{barcode};
+    $result->{location}       = $item->{location};
+    $result->{homebranch}     = $item->{homebranch};
+    $result->{restricted}     = $item->{restricted};
+    $result->{holdingbranch}  = $item->{holdingbranch};
+    $result->{itype}          = $item->{itype};
+    $result->{copynumber}     = $item->{copynumber};
+    $result->{itemcallnumber} = $item->{itemcallnumber};
+    $result->{ccode}          = $item->{ccode};
 
     return C4::NCIP::NcipUtils::clearEmptyKeys($result);
 }
