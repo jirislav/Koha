@@ -116,8 +116,8 @@ sub lookupItemSet {
     }
     my $desiredSomething
         = $holdQueueDesired
-        or $itemRestrictsDesired
-        or $circStatusDesired;
+        || $itemRestrictsDesired
+        || $circStatusDesired;
 
     $result->{bibInfo} = parseBiblio($bibId)
         unless $desiredSomething and defined $query->param('notBibInfo');
