@@ -38,6 +38,110 @@ C4::NCIP::NcipUtils - NCIP Common subroutines used in most of C4::NCIP modules
 
 =head1 METHODS
 
+=cut
+
+=head2 canBeRenewed
+
+	canBeRenewed($cgiInput)
+
+=cut
+
+sub canBeRenewed {
+    my $query  = shift;
+    my $userId = $query->param('userId');
+    my $itemId = $query->param('itemId');
+    my $response;
+
+    my ($okay, $error)
+        = C4::Circulation::CanBookBeRenewed($userId, $itemId, '0');
+
+    $response->{allowed} = $okay ? 'y' : 'n';
+
+    printJson($query, $response) unless $okay;
+
+    my $maxDateDueDesired = $query->param('maxDateDueDesired');
+
+    if (defined $maxDateDueDesired) {
+        my $dbh = C4::Context->dbh;
+        # Find the issues record for this book
+        my $sth = $dbh->prepare(
+            "SELECT branchcode FROM issues WHERE itemnumber = ?");
+        $sth->execute($itemId);
+        my $issueBranchCode = $sth->fetchrow_array;
+        unless ($issueBranchCode) {
+            print $query->header(
+                -type   => 'text/plain',
+                -status => '404 Not Found'
+            );
+            print 'Checkout wasn\'t found .. Nothing to renew..';
+            exit 0;
+        }
+
+        my $biblio = C4::Biblio::GetBiblioFromItemNumber($itemId);
+        my $itemtype
+            = (C4::Context->preference('item-level_itypes'))
+            ? $biblio->{'itype'}
+            : $biblio->{'itemtype'};
+
+        my $now = DateTime->now(time_zone => C4::Context->tz());
+        my $borrower = C4::Members::GetMember(borrowernumber => $userId);
+        unless ($borrower) {
+            print $query->header(
+                -type   => 'text/plain',
+                -status => '404 Not Found'
+            );
+            print 'User wasn\'t found ..';
+            exit 0;
+        }
+
+        my $maxDateDue
+            = C4::Circulation::CalcDateDue($now, $itemtype, $issueBranchCode,
+            $borrower, 'is a renewal');
+        $response->{maxDateDue}
+            = Koha::DateUtils::format_sqldatetime($maxDateDue);
+    }
+    printJson($query, $response);
+}
+
+=head2 canBeRequested
+
+	canBeRequested($cgiInput)
+
+=cut
+
+sub canBeRequested {
+    my ($query) = @_;
+    my $userId  = $query->param('userId');
+    my $itemId  = $query->param('itemId');
+
+    # get borrower information ....
+    my ($borr) = C4::Members::GetMemberDetails($userId);
+
+    print404($query, "User doesn't exist") unless $borr;
+
+    my $response;
+    if ($borr->{'BlockExpiredPatronOpacActions'}) {
+        if ($borr->{'is_expired'}) {
+            $response->{allowed} = 'n';
+            $response->{reason}  = 'expired';
+            printJson($query, $response);
+        }
+    }
+
+    if (C4::Members::IsDebarred($userId)) {
+        $response->{allowed} = 'n';
+        $response->{reason}  = 'debarred';
+        printJson($query, $response);
+    }
+
+    my $canReserve = C4::Reserves::CanItemBeReserved($userId, $itemId);
+
+    my $response;
+    $response->{allowed} = $canReserve eq 'OK' ? 'y' : 'n';
+
+    printJson($query, $response);
+}
+
 =head2 clearEmptyKeys
 
 	clearEmptyKeys($hashref)
