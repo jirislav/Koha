@@ -22,6 +22,8 @@ package C4::NCIP::LookupUser;
 use Modern::Perl;
 use C4::NCIP::NcipUtils;
 
+use vars qw($cas);
+
 =head1 NAME
 
 C4::NCIP::LookupUser - NCIP module for effective processing of LookupUser NCIP service
@@ -64,12 +66,20 @@ sub lookupUser {
     C4::NCIP::NcipUtils::print400($query, "Param userId is undefined..")
         unless $userId;
 
+    my $results;
+    # If 'pw' is defined, then is only authentication desired ..
+    my $pw = $query->param('pw');
+    if (defined $pw) {
+        my $authorized = checkUserAndPassword($userId, $pw, $query);
+        $results->{authorized} = $authorized ? 'y' : 'n';
+        C4::NCIP::NcipUtils::printJson($query, $results);
+    }
+
     my $userData = parseUserData($userId);
 
     C4::NCIP::NcipUtils::print404($query, "User not found..")
         unless $userData;
 
-    my $results;
     my $desiredSomething = 0;
     if (defined $query->param('loanedItemsDesired')) {
         $results->{'loanedItems'} = parseLoanedItems($userId);
@@ -92,6 +102,39 @@ sub lookupUser {
         unless $desiredSomething and defined $query->param('notUserInfo');
 
     C4::NCIP::NcipUtils::printJson($query, $results);
+}
+
+=head2 checkUserAndPassword
+
+	checkUserAndPassword($userId, $pw)
+
+=cut
+
+sub checkUserAndPassword {
+    my ($userid, $password, $query) = @_;
+    my ($return, $cardnumber);
+    my $dbh = C4::Context->dbh;
+
+    # Proxy CAS auth
+    if ($cas && $query->param('PT')) {
+        my $retuserid;
+
+  # In case of a CAS authentication, we use the ticket instead of the password
+        my $PT = $query->param('PT');
+        ($return, $cardnumber, $userid)
+            = C4::Auth::check_api_auth_cas($dbh, $PT, $query); # EXTERNAL AUTH
+    } else {
+
+        # User / password auth
+        unless ($userid and $password) {
+
+            # caller did something wrong, fail the authenticateion
+            return ("failed", undef, undef);
+        }
+        ($return, $cardnumber)
+            = C4::Auth::checkpw($dbh, $userid, $password, $query);
+    }
+    return $return;
 }
 
 =head2 parseUserData
