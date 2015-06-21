@@ -122,6 +122,40 @@ sub lookupItemSet {
     $result->{bibInfo} = parseBiblio($bibId)
         unless $desiredSomething and defined $query->param('notBibInfo');
 
+    # Processing if specified user can request parsed items if desired so
+    my $userId = $query->param('canBeRequestedByUserId');
+
+    if (defined $userId) {
+
+        my $borr = C4::Members::GetMember(borrowernumber => $userId);
+
+        C4::NCIP::NcipUtils::print404($query, "User not found..")
+            unless $borr;
+
+        my $restriction;
+
+        if ($borr->{'BlockExpiredPatronOpacActions'}) {
+            if ($borr->{'is_expired'}) {
+                $restriction = 'expired';
+            }
+        }
+
+        if (C4::Members::IsDebarred($userId)) {
+            $restriction = 'debarred';
+        }
+
+        for my $item (@{$result->{'items'}}) {
+            if (defined $restriction) {
+                $item->{canBeRequested} = $restriction;
+            } else {
+                my $canReserve = C4::Reserves::CanItemBeReserved($userId,
+                    $item->{'itemnumber'});
+
+                $item->{canBeRequested} = $canReserve eq 'OK' ? 'y' : 'n';
+            }
+        }
+    }
+
     C4::NCIP::NcipUtils::printJson($query, $result);
 }
 

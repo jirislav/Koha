@@ -72,6 +72,12 @@ sub lookupUser {
     if (defined $pw) {
         my $authorized = checkUserAndPassword($userId, $pw, $query);
         $results->{authorized} = $authorized ? 'y' : 'n';
+        if (defined $query->param('borNoDesired')
+            && $results->{authorized} eq 'y')
+        {
+            my $bor = C4::Members::GetMember(userid => $userId);
+            $results->{borNo} = $bor->{borrowernumber};
+        }
         C4::NCIP::NcipUtils::printJson($query, $results);
     }
 
@@ -84,12 +90,29 @@ sub lookupUser {
     if (defined $query->param('loanedItemsDesired')) {
         $results->{'loanedItems'} = parseLoanedItems($userId);
         $desiredSomething = 1;
+
+        if (defined $query->param('renewabilityDesired')) {
+            foreach my $loanedItem (@{$results->{'loanedItems'}}) {
+                my $itemNo = $loanedItem->{'itemnumber'};
+                my ($okay, $error)
+                    = C4::Circulation::CanBookBeRenewed($userId, $itemNo,
+                    '0');
+
+                $loanedItem->{renewable} = $okay ? 'y' : 'n';
+            }
+        }
     }
     if (defined $query->param('requestedItemsDesired')) {
         my @reserves
             = C4::Reserves::GetReservesFromBorrowernumber($userId, undef);
 
         C4::NCIP::NcipUtils::clearEmptyKeysWithinArray(@reserves);
+	
+	# Get reserve's titles ..
+	foreach my $reserve (@reserves) {
+		my $bibData = C4::Biblio::GetBiblioItemData($reserve->{biblionumber});
+		$reserve->{title} = $bibData->{title};
+	}
 
         $results->{'requestedItems'} = \@reserves;
         $desiredSomething = 1;
@@ -98,8 +121,19 @@ sub lookupUser {
         $results->{'userFiscalAccount'} = parseUserFiscalAccount($userId);
         $desiredSomething = 1;
     }
+
+    if (defined $query->param('blockOrTrapDesired')) {
+        my @blocks = parseBlocks($userId);
+
+        if (defined @blocks) {
+            $userData->{'blocks'} = \@blocks;
+        }
+    }
+
     $results->{'userInfo'} = $userData
-        unless $desiredSomething and defined $query->param('notUserInfo');
+        unless $desiredSomething
+        and defined $query->param('notUserInfo')
+        and not defined $query->param('blockOrTrapDesired');
 
     C4::NCIP::NcipUtils::printJson($query, $results);
 }
@@ -185,6 +219,54 @@ sub parseUserData {
     return C4::NCIP::NcipUtils::clearEmptyKeys($sth->fetchrow_hashref);
 }
 
+=head2 parseBlocks
+
+	my @blocks = parseBlocks($borrowernumber);
+
+	Returns array of user's blocks
+
+=cut
+
+sub parseBlocks {
+    my ($userId) = @_;
+
+    my @blocks;
+    my $i = 0;
+
+    my $borrower = C4::Members::GetMemberDetails($userId, 0);
+    my ($od, $issue, $fines) = C4::Members::GetMemberIssuesAndFines($userId);
+    # Warningdate is the date that the warning starts appearing
+    my ($today_year,   $today_month,   $today_day)   = Date::Calc::Today();
+    my ($warning_year, $warning_month, $warning_day) = split /-/,
+        $borrower->{'dateexpiry'};
+    my ($enrol_year, $enrol_month, $enrol_day) = split /-/,
+        $borrower->{'dateenrolled'};
+    # Renew day is calculated by adding the enrolment period to today
+    my ($renew_year, $renew_month, $renew_day);
+    if ($enrol_year * $enrol_month * $enrol_day > 0) {
+        ($renew_year, $renew_month, $renew_day)
+            = Date::Calc::Add_Delta_YM($enrol_year, $enrol_month, $enrol_day,
+            0, $borrower->{'enrolmentperiod'});
+    }
+    # if the expiry date is before today ie they have expired
+    if (  !$borrower->{'dateexpiry'}
+        || $warning_year * $warning_month * $warning_day == 0
+        || Date::Calc::Date_to_Days($today_year, $today_month, $today_day)
+        > Date::Calc::Date_to_Days($warning_year, $warning_month,
+            $warning_day))
+    {
+        $blocks[$i++] = "expired:$renew_year-$renew_month-$renew_day";
+    }
+
+    $blocks[$i++] = "totalfines:$fines"
+        if defined $fines and $fines != 0;
+
+    $blocks[$i++] = "debarred:$borrower->{debarredcomment}"
+        if (C4::Members::IsDebarred($userId));
+
+return @blocks;
+}
+
 =head2 parseLoanedItems
 
 	parseLoanedItems($borrowernumber)
@@ -194,9 +276,9 @@ sub parseUserData {
 =cut
 
 sub parseLoanedItems {
-    my ($userId) = @_;
-    my $dbh      = C4::Context->dbh;
-    my $sth      = $dbh->prepare("
+    my ($userId, $canBeRenewedDesired) = @_;
+    my $dbh = C4::Context->dbh;
+    my $sth = $dbh->prepare("
         SELECT issuedate,
 		date_due,
 		itemnumber
