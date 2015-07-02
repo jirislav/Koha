@@ -37,7 +37,7 @@ my $query = new CGI;
 binmode STDOUT, ':encoding(UTF-8)';
 
 my ($status, undef, undef)
-    = check_api_auth($query, {editcatalogue => 'edit_catalogue'});
+    = check_api_auth($query, {editcatalogue => 'catalogue'});
 
 C4::NCIP::NcipUtils::print403($query, $status)
     unless ($status eq "ok");
