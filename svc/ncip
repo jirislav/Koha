@@ -24,6 +24,7 @@ use warnings;
 
 use CGI qw ( -utf8 );
 use C4::Auth qw/check_api_auth/;
+use XML::Simple;
 
 use C4::NCIP::LookupItem qw/lookupItem/;
 use C4::NCIP::LookupItemSet qw/lookupItemSet/;
@@ -36,16 +37,17 @@ use C4::NCIP::CancelRequestItem qw/cancelRequestItem/;
 my $query = new CGI;
 binmode STDOUT, ':encoding(UTF-8)';
 
-my ($status, undef, undef)
-    = check_api_auth($query, {editcatalogue => 'catalogue'});
+my ($status, $cookie, undef)
+    = check_api_auth($query, {catalogue => 'catalogue'});
 
 C4::NCIP::NcipUtils::print403($query, $status)
     unless ($status eq "ok");
 
 # do initial validation
 
+my $service = $query->param('service');
+
 if ($query->request_method eq "GET") {
-    my $service = $query->param('service');
 
     C4::NCIP::NcipUtils::print400($query, "Param service is undefined..")
         unless $service;
@@ -68,12 +70,16 @@ if ($query->request_method eq "GET") {
         C4::NCIP::NcipUtils::print400($query,
             "Param service not recognized..");
     }
+} elsif ($query->request_method eq "POST") {
+    # User is already authentified
+    print $query->header(-type => 'text/xml', cookie => $cookie);
+    print XMLout({ status => $status }, NoAttr => 1, RootName => 'response', XMLDecl => 1);
 } else {
     print $query->header(
         -type   => 'text/plain',
         -status => '405 Method Not Allowed'
         ),
-        'Only GET method is allowed..';
+        'Only GET & POST method is allowed..';
     exit 0;
 }
 

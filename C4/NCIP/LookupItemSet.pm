@@ -20,6 +20,7 @@
 package C4::NCIP::LookupItemSet;
 
 use Modern::Perl;
+use C4::Reserves;
 
 =head1 NAME
 

@@ -21,6 +21,7 @@ package C4::NCIP::LookupItem;
 
 use Modern::Perl;
 use C4::NCIP::NcipUtils;
+use C4::Items;
 
 =head1 NAME
 

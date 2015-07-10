@@ -21,6 +21,7 @@ package C4::NCIP::LookupUser;
 
 use Modern::Perl;
 use C4::NCIP::NcipUtils;
+use C4::Reserves;
 
 use vars qw($cas);
 
