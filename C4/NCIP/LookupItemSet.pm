@@ -128,7 +128,7 @@ sub lookupItemSet {
 
     if (defined $userId) {
 
-        my $borr = C4::Members::GetMember(borrowernumber => $userId);
+        my $borr = C4::Members::GetMemberDetails($userId);
 
         C4::NCIP::NcipUtils::print404($query, "User not found..")
             unless $borr;
