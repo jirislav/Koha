@@ -66,10 +66,11 @@ if ($query->request_method eq "GET") {
         C4::NCIP::RenewItem::renewItem($query);
     } elsif ($service eq 'cancel_request_item') {
         C4::NCIP::CancelRequestItem::cancelRequestItem($query);
-    } else {
-        C4::NCIP::NcipUtils::print400($query,
-            "Param service not recognized..");
     }
+    
+    C4::NCIP::NcipUtils::print400($query,
+        "Param service not recognized or the service didn't finish completely..");
+    
 } elsif ($query->request_method eq "POST") {
     # User is already authentified
     print $query->header(-type => 'text/xml', cookie => $cookie);
